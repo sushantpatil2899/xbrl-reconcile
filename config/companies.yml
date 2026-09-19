@@ -1,0 +1,247 @@
+# Companies to ingest. Any key under `defaults` can be overridden per company.
+# Facts SEC already provides (fiscal year end, former names, industry code)
+# are read from SEC data and are not repeated here.
+
+defaults:
+  start_year: 2009
+  end_year: null
+  enabled: true
+  report_types: [10-K, 10-K/A, 10-Q, 10-Q/A, 20-F, 20-F/A]
+
+companies:
+  # Old timers: public for decades, XBRL since 2009
+  - cik: 796343
+    ticker: ADBE
+    name: Adobe
+    description: Creative, document and marketing software (Photoshop, Acrobat)
+    group: old_timer
+    notes: 52/53 week fiscal year ending near November 30
+
+  - cik: 896878
+    ticker: INTU
+    name: Intuit
+    description: Tax, accounting and personal finance software (TurboTax, QuickBooks)
+    group: old_timer
+    events:
+      - { year: 2020, note: Acquired Credit Karma }
+      - { year: 2021, note: Acquired Mailchimp }
+
+  - cik: 1108524
+    ticker: CRM
+    name: Salesforce
+    description: Sales and customer management software
+    group: old_timer
+    events:
+      - { year: 2019, note: Acquired Tableau }
+      - { year: 2021, note: Acquired Slack }
+
+  - cik: 769397
+    ticker: ADSK
+    name: Autodesk
+    description: Design and engineering software (AutoCAD)
+    group: old_timer
+    notes: Moved from perpetual licenses to subscriptions
+
+  # Middle aged: public between 2012 and 2019
+  - cik: 1327811
+    ticker: WDAY
+    name: Workday
+    description: HR, payroll and finance software
+    group: middle
+    events:
+      - { year: 2012, note: IPO }
+
+  - cik: 1373715
+    ticker: NOW
+    name: ServiceNow
+    description: IT service management and workflow software
+    group: middle
+    events:
+      - { year: 2012, note: IPO }
+
+  - cik: 1404655
+    ticker: HUBS
+    name: HubSpot
+    description: Marketing, sales and customer service software
+    group: middle
+    events:
+      - { year: 2014, note: IPO }
+
+  - cik: 1393052
+    ticker: VEEV
+    name: Veeva Systems
+    description: Cloud software for pharmaceutical and life sciences companies
+    group: middle
+    events:
+      - { year: 2013, note: IPO }
+
+  - cik: 1372612
+    ticker: BOX
+    name: Box
+    description: Cloud file storage and collaboration
+    group: middle
+    events:
+      - { year: 2015, note: IPO }
+
+  - cik: 1447669
+    ticker: TWLO
+    name: Twilio
+    description: Messaging and voice APIs for developers
+    group: middle
+    events:
+      - { year: 2016, note: IPO }
+      - { year: 2020, note: Acquired Segment }
+
+  - cik: 1660134
+    ticker: OKTA
+    name: Okta
+    description: Identity and login security
+    group: middle
+    events:
+      - { year: 2017, note: IPO }
+      - { year: 2021, note: Acquired Auth0 }
+
+  - cik: 1441816
+    ticker: MDB
+    name: MongoDB
+    description: Document database and Atlas cloud database service
+    group: middle
+    events:
+      - { year: 2017, note: IPO }
+
+  - cik: 1261333
+    ticker: DOCU
+    name: DocuSign
+    description: Electronic signature and agreement software
+    group: middle
+    events:
+      - { year: 2018, note: IPO }
+
+  - cik: 1585521
+    ticker: ZM
+    name: Zoom Communications
+    description: Video meetings and communications software
+    group: middle
+    events:
+      - { year: 2019, note: IPO }
+
+  - cik: 1535527
+    ticker: CRWD
+    name: CrowdStrike
+    description: Endpoint and cloud security
+    group: middle
+    events:
+      - { year: 2019, note: IPO }
+
+  - cik: 1561550
+    ticker: DDOG
+    name: Datadog
+    description: Infrastructure and application monitoring
+    group: middle
+    events:
+      - { year: 2019, note: IPO }
+
+  - cik: 1713683
+    ticker: ZS
+    name: Zscaler
+    description: Cloud network security
+    group: middle
+    events:
+      - { year: 2018, note: IPO }
+
+  # New: public 2020 or later, inline XBRL only
+  - cik: 1640147
+    ticker: SNOW
+    name: Snowflake
+    description: Cloud data warehouse
+    group: new
+    events:
+      - { year: 2020, note: IPO }
+
+  - cik: 1734722
+    ticker: PATH
+    name: UiPath
+    description: Robotic process automation software
+    group: new
+    events:
+      - { year: 2021, note: IPO }
+
+  - cik: 1653482
+    ticker: GTLB
+    name: GitLab
+    description: DevOps platform and code hosting
+    group: new
+    events:
+      - { year: 2021, note: IPO }
+
+  - cik: 1642896
+    ticker: IOT
+    name: Samsara
+    description: Connected operations and fleet tracking
+    group: new
+    notes: 52/53 week fiscal year ending near January 31
+    events:
+      - { year: 2021, note: IPO }
+
+  - cik: 1835830
+    ticker: KVYO
+    name: Klaviyo
+    description: Email and SMS marketing software
+    group: new
+    events:
+      - { year: 2023, note: IPO }
+
+  - cik: 1943896
+    ticker: RBRK
+    name: Rubrik
+    description: Data backup and security
+    group: new
+    events:
+      - { year: 2024, note: IPO }
+
+  - cik: 1579878
+    ticker: FIG
+    name: Figma
+    description: Collaborative design software
+    group: new
+    events:
+      - { year: 2025, note: IPO }
+
+  # Gone: acquired or taken private, filings stop
+  - cik: 1353283
+    ticker: SPLK
+    name: Splunk
+    description: Log search and security analytics
+    group: gone
+    events:
+      - { year: 2012, note: IPO }
+      - { year: 2024, note: "Acquired by Cisco, stopped filing" }
+
+  - cik: 1463172
+    ticker: ZEN
+    name: Zendesk
+    description: Customer support software
+    group: gone
+    events:
+      - { year: 2014, note: IPO }
+      - { year: 2022, note: "Taken private, stopped filing" }
+
+  # Rule changers: accounting rulebook or filer type changes
+  - cik: 1650372
+    ticker: TEAM
+    name: Atlassian
+    description: Team collaboration software (Jira, Confluence)
+    group: rule_changer
+    notes: XBRL data starts 2018; contains both ifrs-full and us-gaap facts
+    events:
+      - { year: 2015, note: IPO }
+      - { year: 2023, note: First 10-K under US GAAP after IFRS 20-F filings }
+
+  - cik: 1707753
+    ticker: ESTC
+    name: Elastic
+    description: Search and observability software (Elasticsearch)
+    group: rule_changer
+    notes: Netherlands company that files 10-K under US GAAP
+    events:
+      - { year: 2018, note: IPO }

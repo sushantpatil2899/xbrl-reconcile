@@ -160,7 +160,7 @@ companies:
     events:
       - { year: 2019, note: Acquired Tableau }
       - { year: 2021, note: Acquired Slack }
-    notes: Renamed from salesforce.com in 2022
+    notes: Deliberate merger case for tag drift
 ```
 
 Rules:
