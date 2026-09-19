@@ -1,0 +1,33 @@
+[project]
+name = "xbrl-reconcile"
+version = "0.1.0"
+description = "Reconcile SEC XBRL financial data across companies and years"
+requires-python = ">=3.13"
+dependencies = [
+    "boto3>=1.36",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+xbrl-ingest = "xbrl_reconcile.ingest.run:main"
+xbrl-check-ciks = "xbrl_reconcile.ingest.check_ciks:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
