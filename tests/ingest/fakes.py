@@ -1,5 +1,6 @@
 """Test doubles for network, time and SEC access."""
 
+import json
 import urllib.error
 
 
@@ -50,3 +51,43 @@ class FakeClock:
 
 def http_error(code: int) -> urllib.error.HTTPError:
     return urllib.error.HTTPError("https://example.test", code, "error", None, None)
+
+
+def submissions_json(filings, name="Test Co", tickers=None) -> bytes:
+    """Build a minimal submissions document. Each filing is (form, accession, filing_date)."""
+    return json.dumps(
+        {
+            "name": name,
+            "tickers": ["TEST"] if tickers is None else tickers,
+            "filings": {
+                "recent": {
+                    "form": [f[0] for f in filings],
+                    "accessionNumber": [f[1] for f in filings],
+                    "filingDate": [f[2] for f in filings],
+                }
+            },
+        }
+    ).encode()
+
+
+class FakeSecApi:
+    """Serves scripted responses per CIK; a value that is an Exception is raised."""
+
+    def __init__(self, submissions=None, companyfacts=None):
+        self.submissions_by_cik = dict(submissions or {})
+        self.companyfacts_by_cik = dict(companyfacts or {})
+        self.calls = []
+
+    def submissions(self, cik10: str) -> bytes:
+        self.calls.append(("submissions", cik10))
+        return self._serve(self.submissions_by_cik[cik10])
+
+    def companyfacts(self, cik10: str) -> bytes:
+        self.calls.append(("companyfacts", cik10))
+        return self._serve(self.companyfacts_by_cik[cik10])
+
+    @staticmethod
+    def _serve(value):
+        if isinstance(value, Exception):
+            raise value
+        return value
