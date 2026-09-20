@@ -1,0 +1,28 @@
+name: ingest
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+# Only one ingestion run at a time; a new run waits for the current one.
+concurrency:
+  group: ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.1.0
+      - run: uv sync --locked --no-dev
+      - run: uv run xbrl-ingest
+        env:
+          STORAGE_BACKEND: b2
+          SEC_CONTACT_EMAIL: ${{ secrets.SEC_CONTACT_EMAIL }}
+          B2_INGEST_KEY_ID: ${{ secrets.B2_INGEST_KEY_ID }}
+          B2_INGEST_KEY: ${{ secrets.B2_INGEST_KEY }}
+          B2_BUCKET: ${{ vars.B2_BUCKET }}
+          B2_ENDPOINT: ${{ vars.B2_ENDPOINT }}
