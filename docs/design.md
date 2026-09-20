@@ -258,7 +258,11 @@ Decisions:
 - Terraform's own credentials (B2 master key, GitHub fine grained token) come
   from local environment variables and are never committed.
 - Terraform is run manually when infra changes, not by the daily job.
-- Manual one time step: set a $0 spending cap in the Backblaze account.
+- No payment method is kept on the Backblaze account, so charges are
+  impossible: past the free tier, uploads fail instead of billing. Editing
+  spending caps requires a card on file and is therefore skipped.
+- Backblaze free tier also allows 1 GB of downloads per day, which matters
+  when dbt reads the raw layer in Phase 2 (about 150 MB total today).
 
 ### 7.8 Testing
 
