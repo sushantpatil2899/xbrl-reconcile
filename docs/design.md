@@ -243,7 +243,7 @@ Managed resources:
 |---|---|
 | Private B2 bucket for raw data | Backblaze/b2 |
 | Application key scoped to that bucket only | Backblaze/b2 |
-| Actions secrets: `B2_KEY_ID`, `B2_APPLICATION_KEY`, `SEC_CONTACT_EMAIL` | integrations/github |
+| Actions secrets: `B2_INGEST_KEY_ID`, `B2_INGEST_KEY`, `SEC_CONTACT_EMAIL` | integrations/github |
 | Actions variables: `B2_BUCKET`, `B2_ENDPOINT` | integrations/github |
 
 Decisions:
@@ -252,6 +252,9 @@ Decisions:
   workflow needs, not the workflow file.
 - State stored in HCP Terraform free tier (limit 500 resources; this uses
   about 10), local execution mode so Terraform runs from the developer laptop.
+- The workflow key is named `B2_INGEST_KEY_ID` and `B2_INGEST_KEY` so it is
+  never confused with the Backblaze provider's own `B2_APPLICATION_KEY_ID`
+  and `B2_APPLICATION_KEY` environment variables used by Terraform.
 - Terraform's own credentials (B2 master key, GitHub fine grained token) come
   from local environment variables and are never committed.
 - Terraform is run manually when infra changes, not by the daily job.
