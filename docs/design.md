@@ -272,7 +272,108 @@ Decisions:
   detection by report type, timestamped snapshot paths (two runs on one day
   produce two files), per company failure isolation.
 
-## 8. Open decisions for later phases
+## 8. Phase 2 and 3 groundwork (decided while exploring the data)
+
+### 8.1 What the raw data actually is
+
+Verified against Salesforce's companyfacts file (31,386 facts, 704 concepts).
+
+- The file is not a filing. It is every fact from every filing the company has
+  made, accumulated. Each fact carries `accn`, the filing that reported it.
+- Every snapshot is a full copy; a new 10-Q adds roughly 300 to 450 facts to a
+  file of 31,000.
+- A fact's business key is `taxonomy + concept + unit + period_start +
+  period_end`. Verified: that key plus `accession` is unique across the file,
+  and the key alone is reported by up to 11 filings.
+- 49 percent of business keys are reported more than once. 779 of 17,181 have
+  more than one distinct value, which are restatements. Example: total assets
+  at 2018-01-31 reported as 21,009,802,000 then restated to 21,984,000,000.
+- Facts are either duration (income statement, cash flow; has `start`) or
+  instant (balance sheet; no `start`).
+- No quarter ever ends on the fiscal year end, so Q4 must be derived as full
+  year minus nine months.
+- `fy` and `fp` describe the filing, not the period, and are not used.
+- companyfacts carries consolidated facts only; dimensional breakdowns such as
+  segment revenue are excluded by SEC, so the key needs no dimension part.
+
+### 8.2 Taxonomies present
+
+| Taxonomy | Contents | Used for mapping |
+|---|---|---|
+| us-gaap | Financial statements under US rules | Yes |
+| ifrs-full | Financial statements under international rules (Atlassian) | Yes, flagged as a different basis |
+| dei | Cover page facts such as shares outstanding and public float | Kept, used later for per share figures |
+| ecd | Executive compensation, filed in DEF 14A | Kept, not mapped |
+| ffd | Filing fee disclosures, filed in S-8 and similar | Kept, not mapped |
+| srt, invest | Shared building blocks and a retired investment taxonomy | Kept, not mapped |
+
+Staging keeps every taxonomy. Mapping reads us-gaap and ifrs-full only.
+
+### 8.3 Scale of the mapping problem
+
+Across the 28 companies: 2,047 distinct us-gaap concepts, of which 42 are used
+by all 28 and 774 by exactly one company. Per company the range is 230 to 691.
+
+Revenue alone is reported under at least five standard tags. CrowdStrike uses
+RevenueFromContractWithCustomerIncludingAssessedTax while most peers use the
+Excluding variant. Salesforce reports two candidate tags for fiscal 2018 with
+values 60 million apart, the original and the ASC 606 restatement.
+
+### 8.4 Tag mapping config shape
+
+`config/tag_mappings.yml`, source of truth in YAML, converted to a dbt seed by
+a small command.
+
+```yaml
+concepts:
+  revenue:
+    statement: income_statement
+    tags:                    # list order is the priority, first match wins
+      - { tag: "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax", confidence: high }
+      - { tag: "us-gaap:Revenues", confidence: high }
+
+company_overrides:
+  - cik: 1650372
+    concept: revenue
+    prefer: ["ifrs-full:Revenue"]
+    through_year: 2022
+    note: "Filed 20-F under IFRS until 2022"
+  - cik: 1108524
+    concept: revenue
+    ignore: ["us-gaap:SalesRevenueServicesNet"]
+```
+
+Rules:
+
+- Order in `tags` is the priority. Position becomes a priority number when the
+  seed is generated, so no numbers are typed by hand.
+- `prefer` puts tags ahead of the global order for one company.
+- `ignore` removes a tag from consideration for that company entirely, which is
+  different from ranking it last.
+- `through_year` and `from_year` bound an override to a period range.
+- Resolution order: company override for the year, then company override, then
+  global order.
+
+### 8.5 Onboarding a new company
+
+1. Add the company to `config/companies.yml`.
+2. Run the pipeline.
+3. Read the mapping coverage report, which lists unmapped and ambiguous
+   company and period combinations.
+4. Add tag mappings or overrides only for what it flags.
+
+No code changes. The five global revenue tags already cover all 28 companies
+with no overrides.
+
+### 8.6 Open questions still to settle
+
+1. When filings disagree about a business key, does the mart show the latest
+   filed value, the first reported value, or both with a restatement flag?
+2. Should form type be part of the business key, or stay an attribute?
+3. Are Atlassian's IFRS years mapped alongside us-gaap values or kept as a
+   separate reporting basis in the mart?
+
+## 9. Open decisions for later phases
 
 Phase 2 (staging)
 - Keep first reported and latest restated values side by side; choose in marts.
