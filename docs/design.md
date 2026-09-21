@@ -365,13 +365,28 @@ Rules:
 No code changes. The five global revenue tags already cover all 28 companies
 with no overrides.
 
-### 8.6 Open questions still to settle
+### 8.6 Decisions on disagreement, keys and reporting basis
 
-1. When filings disagree about a business key, does the mart show the latest
-   filed value, the first reported value, or both with a restatement flag?
-2. Should form type be part of the business key, or stay an attribute?
-3. Are Atlassian's IFRS years mapped alongside us-gaap values or kept as a
-   separate reporting basis in the mart?
+**Restated values: keep both.** The mart column `value` carries the latest
+filed value. Alongside it, `originally_reported_value`, `restatement_count`
+and `was_restated` make the rewrite visible. Evidence: Intuit has 1,065
+business keys reported with more than one value, and 932 of those differ by
+more than one percent, so the choice is material rather than cosmetic. A fact
+restated several times is also a confidence signal for the mart's companion
+report.
+
+**Form type is an attribute, not part of the key.** The business key stays
+`taxonomy + concept + unit + period_start + period_end`. `form` travels as a
+column so models can still prefer 10-K values when that is wanted. Putting
+form in the key would leave two permanent current values per period, since
+disagreements track filing date rather than form: total assets at 2018-01-31
+were 21,009,802,000 in the 10-K and 21,984,000,000 in the next 10-Q.
+
+**IFRS years are mapped, with a `basis` column.** Atlassian's ifrs-full annual
+revenue covers periods ending 2016 to 2018 and its us-gaap revenue covers 2021
+onward, so the two bases never share a business key. Every mart row carries
+`basis` as `us_gaap` or `ifrs`, and IFRS derived values are capped at medium
+confidence because the underlying rules differ.
 
 ## 9. Open decisions for later phases
 
