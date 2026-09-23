@@ -35,7 +35,7 @@ class RunResult:
 
 def run_ingestion(companies: list[Company], api, storage, now: datetime) -> RunResult:
     run_ts = now.astimezone(UTC).strftime(TIMESTAMP_FORMAT)
-    state = _read_state(storage)
+    seen_by_cik = _read_state(storage)
     result = RunResult()
 
     for company in companies:
@@ -44,7 +44,7 @@ def run_ingestion(companies: list[Company], api, storage, now: datetime) -> RunR
         try:
             submissions = api.submissions(company.cik10)
             accession = latest_report_accession(submissions, company.report_types)
-            seen = state.get(company.cik10)
+            seen = seen_by_cik.get(company.cik10)
             if seen is not None and seen["accession"] == accession:
                 result.skipped.append(company.ticker)
                 continue
@@ -54,7 +54,7 @@ def run_ingestion(companies: list[Company], api, storage, now: datetime) -> RunR
                 storage.write(
                     snapshot_key(dataset, company.cik10, run_ts), gzip.compress(body, mtime=0)
                 )
-            state[company.cik10] = {
+            seen_by_cik[company.cik10] = {
                 "ticker": company.ticker,
                 "accession": accession,
                 "snapshot": run_ts,
@@ -66,6 +66,10 @@ def run_ingestion(companies: list[Company], api, storage, now: datetime) -> RunR
             log.error("%s failed: %s", company.ticker, err)
             result.failed[company.ticker] = str(err)
 
+    # last_run is a heartbeat written on every run, including runs that download
+    # nothing, so staleness can be detected without mistaking a quiet week for a
+    # broken pipeline.
+    state = {"last_run": run_ts, "companies": seen_by_cik}
     storage.write(STATE_KEY, json.dumps(state, indent=2, sort_keys=True).encode())
     _write_config_snapshot(companies, storage, run_ts)
     return result
@@ -127,8 +131,14 @@ def _write_config_snapshot(companies: list[Company], storage, run_ts: str) -> No
 
 
 def _read_state(storage) -> dict:
+    """Return the per company state, accepting the shape used before last_run existed."""
     data = storage.read(STATE_KEY)
-    return json.loads(data) if data else {}
+    if not data:
+        return {}
+    state = json.loads(data)
+    if "companies" in state:
+        return state["companies"]
+    return state
 
 
 def _require(env: Mapping[str, str], name: str) -> str:

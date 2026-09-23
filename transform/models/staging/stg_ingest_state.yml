@@ -1,0 +1,14 @@
+version: 2
+
+models:
+  - name: stg_ingest_state
+    description: >
+      Heartbeat of the ingestion pipeline, read from the raw state file.
+      One row.
+    columns:
+      - name: last_run_at
+        description: When ingestion last ran, whether or not it downloaded anything.
+        tests: [not_null]
+      - name: companies_tracked
+        description: How many companies the state file knows about.
+        tests: [not_null]

@@ -4,12 +4,17 @@ profile: xbrl_reconcile
 
 model-paths: ["models"]
 macro-paths: ["macros"]
+test-paths: ["tests"]
 target-path: "target"
 
 vars:
   # Where the ingestion layer lands raw SEC files. Defaults to the bucket;
   # set RAW_ROOT to a local folder for development without credentials.
   raw_root: "{{ env_var('RAW_ROOT', 's3://' ~ env_var('B2_BUCKET', 'unset') ~ '/raw') }}"
+
+  # How stale the pipeline may get before it warns, then before it fails.
+  freshness_warn_days: 3
+  freshness_error_days: 14
 
 models:
   xbrl_reconcile:

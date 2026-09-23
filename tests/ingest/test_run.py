@@ -49,7 +49,8 @@ def test_first_run_downloads_and_writes_state(tmp_path):
     stored = storage.read("raw/sec/companyfacts/cik=0000000001/2026-09-16T061502Z.json.gz")
     assert gzip.decompress(stored) == b'{"facts": {}}'
     state = json.loads(storage.read(STATE_KEY))
-    assert state["0000000001"] == {
+    assert state["last_run"] == "2026-09-16T061502Z"
+    assert state["companies"]["0000000001"] == {
         "ticker": "AAA",
         "accession": "acc-1",
         "snapshot": "2026-09-16T061502Z",
@@ -109,7 +110,7 @@ def test_one_company_failing_does_not_stop_others(tmp_path):
 
     assert result.downloaded == ["BBB"]
     assert "404" in result.failed["AAA"]
-    assert "0000000001" not in json.loads(storage.read(STATE_KEY))
+    assert "0000000001" not in json.loads(storage.read(STATE_KEY))["companies"]
 
 
 def test_disabled_company_is_not_fetched(tmp_path):
@@ -195,3 +196,39 @@ def test_disabled_companies_are_recorded_with_enabled_false(tmp_path):
     rows = json.loads(storage.read(config_snapshot_key("companies", "2026-09-16T061502Z")))
     assert [r["ticker"] for r in rows] == ["AAA", "BBB"]
     assert [r["enabled"] for r in rows] == [False, False]
+
+
+def test_heartbeat_updates_even_when_everything_is_skipped(tmp_path):
+    api = FakeSecApi(
+        submissions={"0000000001": submissions_json([("10-Q", "acc-1", "2026-09-01")])},
+        companyfacts={"0000000001": b"{}"},
+    )
+    storage = LocalStorage(tmp_path)
+    run_ingestion([company(1, "AAA")], api, storage, MORNING)
+
+    result = run_ingestion([company(1, "AAA")], api, storage, AFTERNOON)
+
+    assert result.skipped == ["AAA"]
+    state = json.loads(storage.read(STATE_KEY))
+    assert state["last_run"] == "2026-09-16T140000Z"
+    assert state["companies"]["0000000001"]["snapshot"] == "2026-09-16T061502Z"
+
+
+def test_state_written_before_the_heartbeat_existed_is_still_understood(tmp_path):
+    """The old state file had companies at the top level and no last_run."""
+    storage = LocalStorage(tmp_path)
+    old_shape = {"0000000001": {"ticker": "AAA", "accession": "acc-1", "snapshot": "old"}}
+    storage.write(STATE_KEY, json.dumps(old_shape).encode())
+    api = FakeSecApi(
+        submissions={"0000000001": submissions_json([("10-Q", "acc-1", "2026-09-01")])},
+        companyfacts={"0000000001": b"{}"},
+    )
+
+    result = run_ingestion([company(1, "AAA")], api, storage, MORNING)
+
+    # Nothing re-downloaded, because the old accession was still recognised.
+    assert result.skipped == ["AAA"]
+    assert api.calls == [("submissions", "0000000001")]
+    state = json.loads(storage.read(STATE_KEY))
+    assert state["last_run"] == "2026-09-16T061502Z"
+    assert state["companies"]["0000000001"]["accession"] == "acc-1"
