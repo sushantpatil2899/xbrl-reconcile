@@ -30,6 +30,11 @@ jobs:
       - uses: astral-sh/setup-uv@v10.1.0
       - run: uv sync --locked --no-dev
 
+      # The runner is wiped between runs, so the database is fetched back.
+      # Without it every run starts empty and rebuilds every model from scratch.
+      - name: Fetch previous database
+        run: uv run xbrl-fetch-warehouse
+
       # dbt build runs each model and its tests together, skipping anything
       # downstream of a failure. RAW_ROOT is unset, so models read the bucket.
       - name: Build and test models
