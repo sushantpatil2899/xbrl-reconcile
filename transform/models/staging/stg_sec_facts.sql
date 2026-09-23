@@ -7,6 +7,20 @@
   is a number in most files and a zero padded string in others.
 #}
 
+{{ config(
+    materialized='incremental',
+    incremental_strategy='delete+insert',
+    unique_key='cik'
+) }}
+
+{#- ref() below sits inside a conditional branch, so dbt cannot see the
+    dependency while parsing. This hint declares it explicitly. -#}
+-- depends_on: {{ ref('stg_companies') }}
+
+{#- Files still to process. When the table already exists, snapshots recorded in
+    its source_file column are skipped, so a quiet day reads nothing. -#}
+{% set snapshot_files = newest_snapshots('companyfacts', exclude_processed=is_incremental()) %}
+
 {% set fact_struct %}
 STRUCT("start" DATE, "end" DATE, val DOUBLE, accn VARCHAR, fy INT, fp VARCHAR,
        form VARCHAR, filed DATE, frame VARCHAR)
@@ -17,6 +31,13 @@ MAP(VARCHAR, MAP(VARCHAR, STRUCT(label VARCHAR, description VARCHAR,
     units MAP(VARCHAR, {{ fact_struct }}[]))))
 {% endset %}
 
+{% if snapshot_files == '[]' %}
+
+-- Nothing new to process. Selecting no rows leaves the table untouched.
+select * from {{ this }} where false
+
+{% else %}
+
 with files as (
 
     select
@@ -25,7 +46,7 @@ with files as (
         facts,
         filename as source_file
     from read_json(
-        {{ newest_snapshots('companyfacts') }},
+        {{ snapshot_files }},
         columns = {cik: 'VARCHAR', entityName: 'VARCHAR', facts: '{{ facts_schema }}'},
         filename = true
     )
@@ -105,3 +126,5 @@ select
 from flattened f
 left join {{ ref('stg_companies') }} c
     on cast(f.cik_raw as bigint) = c.cik
+
+{% endif %}
