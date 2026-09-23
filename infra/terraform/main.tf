@@ -10,6 +10,14 @@ resource "b2_bucket" "raw" {
     file_name_prefix             = "raw/sec/_state/"
     days_from_hiding_to_deleting = 30
   }
+
+  # The database is rewritten by every transform run, at about 21 MB a time.
+  # Without this, a year of daily runs would leave 365 hidden copies and fill
+  # the free tier. Seven days is enough to roll back a bad build.
+  lifecycle_rules {
+    file_name_prefix             = "warehouse/"
+    days_from_hiding_to_deleting = 7
+  }
 }
 
 # Key used by the daily workflow. Limited to this bucket and cannot delete files.
