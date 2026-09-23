@@ -122,6 +122,14 @@ select
     f.fact.form,
     f.fact.filed as filed_date,
     f.fact.frame,
+    -- Rows that fail a data quality rule stay in staging so they can be counted
+    -- and inspected. Downstream models read only rows where is_valid is true.
+    (
+        c.ticker is not null
+        and f.fact.val is not null
+        and f.fact.accn is not null
+        and f.fact.filed is not null
+    ) as is_valid,
     f.source_file
 from flattened f
 left join {{ ref('stg_companies') }} c

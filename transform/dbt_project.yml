@@ -20,3 +20,9 @@ models:
   xbrl_reconcile:
     staging:
       +materialized: table
+
+data_tests:
+  xbrl_reconcile:
+    # Keep the rows that failed a test, so "3 rows failed" can be investigated.
+    +store_failures: true
+    +schema: test_failures
