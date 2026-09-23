@@ -1,0 +1,30 @@
+# Connection settings. The models are identical across targets; only the
+# location of the raw files and the database differ.
+xbrl_reconcile:
+  target: prod
+  outputs:
+    # Reads raw files from Backblaze. Used by GitHub Actions.
+    prod:
+      type: duckdb
+      path: "xbrl.duckdb"
+      threads: 4
+      extensions:
+        - httpfs
+        - parquet
+      secrets:
+        # DuckDB wants the endpoint host without a scheme. Backblaze endpoints
+        # are s3.<region>.backblazeb2.com, so the region is the second label.
+        - type: s3
+          key_id: "{{ env_var('B2_INGEST_KEY_ID', 'unset') }}"
+          secret: "{{ env_var('B2_INGEST_KEY', 'unset') }}"
+          endpoint: "{{ env_var('B2_ENDPOINT', 'https://s3.unset.example').replace('https://', '') }}"
+          region: "{{ env_var('B2_ENDPOINT', 'https://s3.unset.example').replace('https://', '').split('.')[1] }}"
+          url_style: "path"
+
+    # Reads raw files from a local folder. Needs no credentials.
+    dev:
+      type: duckdb
+      path: "dev.duckdb"
+      threads: 4
+      extensions:
+        - parquet

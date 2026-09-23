@@ -5,6 +5,9 @@ description = "Reconcile SEC XBRL financial data across companies and years"
 requires-python = ">=3.13"
 dependencies = [
     "boto3>=1.36",
+    "dbt-core>=1.12.5",
+    "dbt-duckdb>=1.11.0",
+    "duckdb>=1.5.5",
     "pyyaml>=6.0",
 ]
 

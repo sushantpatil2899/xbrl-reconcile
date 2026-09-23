@@ -1,0 +1,18 @@
+name: xbrl_reconcile
+version: "1.0.0"
+profile: xbrl_reconcile
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+seed-paths: ["seeds"]
+target-path: "target"
+
+vars:
+  # Where the ingestion layer lands raw SEC files. Defaults to the bucket;
+  # set RAW_ROOT to a local folder for development without credentials.
+  raw_root: "{{ env_var('RAW_ROOT', 's3://' ~ env_var('B2_BUCKET', 'unset') ~ '/raw/sec') }}"
+
+models:
+  xbrl_reconcile:
+    staging:
+      +materialized: table
