@@ -24,3 +24,4 @@ transform/dbt_packages/
 transform/logs/
 transform/*.duckdb
 transform/*.duckdb.wal
+transform/.user.yml
