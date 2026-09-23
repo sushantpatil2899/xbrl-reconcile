@@ -1,0 +1,50 @@
+version: 2
+
+models:
+  - name: stg_companies
+    description: Company config loaded from config/companies.yml through a seed.
+    columns:
+      - name: cik
+        description: SEC's permanent company identifier.
+        tests: [unique, not_null]
+      - name: ticker
+        tests: [unique, not_null]
+
+  - name: stg_sec_facts
+    description: >
+      One row per fact as reported, from the newest raw snapshot per company.
+      No deduplication: a business key repeats once per filing that reported it.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - cik
+            - taxonomy
+            - concept
+            - unit
+            - period_start
+            - period_end
+            - accession
+    columns:
+      - name: cik
+        tests: [not_null]
+      - name: ticker
+        description: Null would mean a file arrived for a company not in config.
+        tests: [not_null]
+      - name: taxonomy
+        tests: [not_null]
+      - name: concept
+        tests: [not_null]
+      - name: unit
+        tests: [not_null]
+      - name: period_end
+        tests: [not_null]
+      - name: period_type
+        tests:
+          - accepted_values:
+              values: ["instant", "duration"]
+      - name: value
+        tests: [not_null]
+      - name: accession
+        tests: [not_null]
+      - name: filed_date
+        tests: [not_null]
