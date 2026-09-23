@@ -14,6 +14,7 @@ dependencies = [
 [project.scripts]
 xbrl-ingest = "xbrl_reconcile.ingest.run:main"
 xbrl-check-ciks = "xbrl_reconcile.ingest.check_ciks:main"
+xbrl-build-seeds = "xbrl_reconcile.seeds:main"
 
 [dependency-groups]
 dev = [
