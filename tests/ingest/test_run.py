@@ -8,7 +8,7 @@ from tests.ingest.fakes import FakeSecApi, submissions_json
 from xbrl_reconcile.config import Company
 from xbrl_reconcile.ingest.http import HttpError
 from xbrl_reconcile.ingest.run import build_storage, run_ingestion
-from xbrl_reconcile.ingest.storage import STATE_KEY, LocalStorage, S3Storage
+from xbrl_reconcile.ingest.storage import STATE_KEY, LocalStorage, S3Storage, config_snapshot_key
 
 MORNING = datetime(2026, 9, 16, 6, 15, 2, tzinfo=UTC)
 AFTERNOON = datetime(2026, 9, 16, 14, 0, 0, tzinfo=UTC)
@@ -41,6 +41,7 @@ def test_first_run_downloads_and_writes_state(tmp_path):
 
     assert result.downloaded == ["AAA"]
     assert keys(tmp_path) == [
+        "raw/config/companies/2026-09-16T061502Z.json",
         "raw/sec/_state/last_seen.json",
         "raw/sec/companyfacts/cik=0000000001/2026-09-16T061502Z.json.gz",
         "raw/sec/submissions/cik=0000000001/2026-09-16T061502Z.json.gz",
@@ -144,3 +145,53 @@ def test_build_storage_b2_missing_variable():
 def test_build_storage_unknown_backend():
     with pytest.raises(ValueError, match="ftp"):
         build_storage({"STORAGE_BACKEND": "ftp"})
+
+
+def test_config_snapshot_records_the_company_list(tmp_path):
+    api = FakeSecApi(
+        submissions={"0000000001": submissions_json([("10-Q", "acc-1", "2026-09-01")])},
+        companyfacts={"0000000001": b"{}"},
+    )
+    storage = LocalStorage(tmp_path)
+
+    run_ingestion([company(1, "AAA")], api, storage, MORNING)
+
+    rows = json.loads(storage.read(config_snapshot_key("companies", "2026-09-16T061502Z")))
+    assert rows == [
+        {
+            "cik": 1,
+            "cik10": "0000000001",
+            "ticker": "AAA",
+            "name": "AAA",
+            "description": "",
+            "group_name": "",
+            "start_year": 2009,
+            "end_year": None,
+            "enabled": True,
+        }
+    ]
+
+
+def test_config_snapshot_is_written_even_when_nothing_downloads(tmp_path):
+    api = FakeSecApi(
+        submissions={"0000000001": submissions_json([("10-Q", "acc-1", "2026-09-01")])},
+        companyfacts={"0000000001": b"{}"},
+    )
+    storage = LocalStorage(tmp_path)
+    run_ingestion([company(1, "AAA")], api, storage, MORNING)
+
+    result = run_ingestion([company(1, "AAA")], api, storage, AFTERNOON)
+
+    assert result.skipped == ["AAA"]
+    assert storage.read(config_snapshot_key("companies", "2026-09-16T140000Z")) is not None
+
+
+def test_disabled_companies_are_recorded_with_enabled_false(tmp_path):
+    storage = LocalStorage(tmp_path)
+    companies = [company(1, "AAA", enabled=False), company(2, "BBB", enabled=False)]
+
+    run_ingestion(companies, FakeSecApi(), storage, MORNING)
+
+    rows = json.loads(storage.read(config_snapshot_key("companies", "2026-09-16T061502Z")))
+    assert [r["ticker"] for r in rows] == ["AAA", "BBB"]
+    assert [r["enabled"] for r in rows] == [False, False]

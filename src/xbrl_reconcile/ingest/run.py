@@ -16,6 +16,7 @@ from xbrl_reconcile.ingest.storage import (
     STATE_KEY,
     LocalStorage,
     S3Storage,
+    config_snapshot_key,
     make_s3_client,
     snapshot_key,
 )
@@ -66,6 +67,7 @@ def run_ingestion(companies: list[Company], api, storage, now: datetime) -> RunR
             result.failed[company.ticker] = str(err)
 
     storage.write(STATE_KEY, json.dumps(state, indent=2, sort_keys=True).encode())
+    _write_config_snapshot(companies, storage, run_ts)
     return result
 
 
@@ -102,6 +104,26 @@ def main() -> int:
     for ticker, error in result.failed.items():
         log.error("failed %s: %s", ticker, error)
     return 1 if result.failed else 0
+
+
+def _write_config_snapshot(companies: list[Company], storage, run_ts: str) -> None:
+    """Store the company list as data, so the bucket records which list produced this run."""
+    rows = [
+        {
+            "cik": c.cik,
+            "cik10": c.cik10,
+            "ticker": c.ticker,
+            "name": c.name,
+            "description": c.description,
+            # `group` is a reserved word in SQL, so the column is group_name.
+            "group_name": c.group,
+            "start_year": c.start_year,
+            "end_year": c.end_year,
+            "enabled": c.enabled,
+        }
+        for c in companies
+    ]
+    storage.write(config_snapshot_key("companies", run_ts), json.dumps(rows, indent=2).encode())
 
 
 def _read_state(storage) -> dict:

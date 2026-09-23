@@ -8,6 +8,7 @@ import boto3
 from botocore.config import Config
 
 RAW_PREFIX = "raw/sec"
+CONFIG_PREFIX = "raw/config"
 STATE_KEY = f"{RAW_PREFIX}/_state/last_seen.json"
 
 
@@ -19,6 +20,11 @@ class Storage(Protocol):
 
 def snapshot_key(dataset: str, cik10: str, run_ts: str) -> str:
     return f"{RAW_PREFIX}/{dataset}/cik={cik10}/{run_ts}.json.gz"
+
+
+def config_snapshot_key(name: str, run_ts: str) -> str:
+    """Config is stored as data so the bucket records which list produced which run."""
+    return f"{CONFIG_PREFIX}/{name}/{run_ts}.json"
 
 
 class LocalStorage:

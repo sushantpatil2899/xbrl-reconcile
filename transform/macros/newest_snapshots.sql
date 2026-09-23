@@ -2,7 +2,7 @@
    Snapshots are cumulative, so only the newest is needed; older ones stay in
    the raw layer as history. Globbing lists keys without downloading files. #}
 {% macro newest_snapshots(dataset) %}
-  {% set pattern = var('raw_root') ~ '/' ~ dataset ~ '/cik=*/*.json.gz' %}
+  {% set pattern = var('raw_root') ~ '/sec/' ~ dataset ~ '/cik=*/*.json.gz' %}
   {% set query %}
     select file
     from (
