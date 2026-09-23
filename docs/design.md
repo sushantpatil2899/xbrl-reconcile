@@ -1,7 +1,7 @@
 # xbrl-reconcile: Design
 
-Status: Phase 0 and Phase 1 decided. Later phases list open decisions only.
-Last updated: 2026-09-16
+Status: Phases 0, 1 and 2 built. Later phases list open decisions only.
+Last updated: 2026-09-23
 
 ## 1. Goal
 
@@ -55,9 +55,9 @@ Verified against SEC data on 2026-09-16.
 
 | # | Phase | Output |
 |---|---|---|
-| 0 | Foundation | Repo layout, Python env, config, lint and tests in CI |
-| 1 | Ingestion | companyfacts and submissions landed raw in Backblaze B2 daily; infra in Terraform |
-| 2 | dbt staging | One clean row per fact, periods derived from dates |
+| 0 | Foundation | Done. Repo layout, Python env, config, lint and tests in CI |
+| 1 | Ingestion | Done. companyfacts and submissions landed raw in Backblaze B2 daily; infra in Terraform |
+| 2 | dbt staging | Done. One row per fact, incremental, tested, published to B2 |
 | 3 | Mapping and intermediate | Tag mapping config, canonical values with confidence |
 | 4 | Custom tags | SEC Financial Statement Data Sets filtered to our companies |
 | 5 | Marts and tests | Income statement, balance sheet, cash flow, confidence report |
@@ -388,14 +388,106 @@ onward, so the two bases never share a business key. Every mart row carries
 `basis` as `us_gaap` or `ifrs`, and IFRS derived values are capped at medium
 confidence because the underlying rules differ.
 
-## 9. Open decisions for later phases
+## 9. Phase 2 as built: the staging layer
 
-Phase 2 (staging)
-- Keep first reported and latest restated values side by side; choose in marts.
-- Derive Q4 as full year minus nine month year to date where needed.
-- Separate instant facts (balance sheet) from duration facts (income, cash flow).
-- Where the dbt DuckDB file lives (built in CI from raw and stored in B2 is
-  the leading option).
+Built 2026-09-21 to 2026-09-23. Runs daily in GitHub Actions, chained after
+ingestion, reading and writing Backblaze. Nothing depends on a laptop.
+
+### 9.1 Shape of the layer
+
+```
+raw/sec/companyfacts/cik=<cik10>/<run_ts>.json.gz    cumulative SEC snapshots
+raw/sec/submissions/cik=<cik10>/<run_ts>.json.gz     filing lists
+raw/config/companies/<run_ts>.json                   the company list, as data
+raw/sec/_state/last_seen.json                        accessions plus last_run
+        |
+        |  dbt (dbt-duckdb), models in transform/models/staging
+        v
+stg_companies        one row per configured company
+stg_sec_facts        one row per fact as reported
+stg_ingest_state     one row: when ingestion last ran
+        |
+        v
+warehouse/xbrl.duckdb    fetched before the build, published after it
+```
+
+### 9.2 Staging grain
+
+`stg_sec_facts` is one row per fact as a filing reported it, with nothing
+deduplicated. A business key repeats once per filing that reported it, which is
+how restatements stay visible.
+
+| Column | Source |
+|---|---|
+| cik, entity_name | top of the companyfacts file |
+| ticker | joined from stg_companies |
+| taxonomy, concept, concept_label, unit | the JSON nesting |
+| period_start, period_end | start and end |
+| period_type, period_days | derived: instant when start is null |
+| value, accession, form, filed_date, frame | the fact entry |
+| is_valid | derived: false when a data quality rule failed |
+| source_file | which snapshot the row came from |
+
+Facts are not filtered by `start_year`; that happens downstream.
+
+### 9.3 Decisions
+
+| Decision | Reason |
+|---|---|
+| Read the newest snapshot per company only | Snapshots are cumulative, so older ones add duplicates and no information. They stay in raw as history |
+| Give DuckDB an explicit JSON schema | `cik` is a number in 24 files and a zero padded string in 4 (FIG, IOT, KVYO, RBRK); auto detection fails across the set |
+| Incremental, delete+insert keyed on cik | A new snapshot replaces that company's facts wholesale. Files already named in source_file are skipped, so the table itself is the record of what has been processed |
+| Fetch the database before building | The runner is wiped between runs; without the fetch every run starts empty and the incremental logic never applies |
+| Structural tests error, data quality tests warn | A broken transformation makes all 28 companies suspect; one company's odd file should not block the other 27 |
+| Quarantine with is_valid rather than dropping rows | A missing value must stay explainable. Downstream models filter on is_valid |
+| store_failures on | Turns "3 rows failed" into the actual rows |
+| Company config read from a bucket snapshot | One source of truth (config/companies.yml) with no generated copy in git, and the bucket records which list produced which run |
+| Freshness measured on a heartbeat, not on data age | Companies file about four times a year, so a quiet fortnight is normal. `last_run` is written on every ingestion run, including no-op runs |
+| Warn at 3 days stale, fail at 14 | Stale data is still correct data; blocking publication would punish the wrong thing |
+
+### 9.4 Tests
+
+23 dbt tests. Structural ones (business key uniqueness, not null on cik,
+taxonomy, concept, unit, period_end, is_valid, accepted values on period_type)
+stop the build. Data quality ones (not null on ticker, value, accession,
+filed_date) warn and quarantine. Two singular tests watch the heartbeat:
+`pipeline_is_fresh` warns past `freshness_warn_days`, `pipeline_is_not_abandoned`
+fails past `freshness_error_days`; both thresholds are vars.
+
+### 9.5 Measured
+
+| Metric | Value |
+|---|---|
+| Rows in stg_sec_facts | 408,213 |
+| Companies | 28 |
+| Distinct concepts | 2,279 |
+| Business keys | 226,028 |
+| Business keys reported more than once | 113,249 |
+| Cold build of stg_sec_facts | 9.2s |
+| Incremental run with nothing new | 0.17s |
+| Published database | about 10.5 MB |
+| Raw read per run | about 4.2 MB |
+
+### 9.6 Traps found while building
+
+- **Mixed `cik` types** across companyfacts files; fixed with an explicit schema
+  and a cast.
+- **A comma inside an unquoted YAML value** silently became a third field, and
+  the config validation caught it.
+- **`ref()` inside a conditional** is invisible to dbt while parsing; a
+  `-- depends_on:` hint is required.
+- **A wiped runner defeats incremental models** unless the database is fetched
+  back first. The behaviour looked correct locally and did nothing in CI.
+- **`glob()` on an empty result** would have produced an empty table silently;
+  the macros raise instead, except on incremental runs where empty is normal.
+
+### 9.7 Local development
+
+`RAW_ROOT` pointed at a folder laid out like the bucket, with the `dev` target,
+runs the same models with no credentials. CI leaves `RAW_ROOT` unset and gets
+the Backblaze path from `B2_BUCKET`.
+
+## 10. Open decisions for later phases
 
 Phase 3 (mapping)
 - Initial canonical concept list (about 15).
@@ -407,6 +499,9 @@ Phase 4 (custom tags)
 
 Phase 5 (marts)
 - Fiscal year versus calendar year alignment for cross company comparison.
+- Deriving Q4 as full year minus nine month year to date.
+- Surfacing latest filed and originally reported values side by side, per the
+  decision in section 8.6.
 
 Phase 6 (linkbase)
 - Which filings to parse (for example latest 10-K per company).

@@ -16,14 +16,15 @@ models:
       No deduplication: a business key repeats once per filing that reported it.
     tests:
       - dbt_utils.unique_combination_of_columns:
-          combination_of_columns:
-            - cik
-            - taxonomy
-            - concept
-            - unit
-            - period_start
-            - period_end
-            - accession
+          arguments:
+            combination_of_columns:
+              - cik
+              - taxonomy
+              - concept
+              - unit
+              - period_start
+              - period_end
+              - accession
     columns:
       # Structural columns. A failure here means the transformation itself is
       # wrong, so every company is suspect and the build must stop.
@@ -40,7 +41,8 @@ models:
       - name: period_type
         tests:
           - accepted_values:
-              values: ["instant", "duration"]
+              arguments:
+                values: ["instant", "duration"]
 
       # Data quality columns. A failure here means one company's data is odd,
       # which should not block the other companies from publishing. The rows are
