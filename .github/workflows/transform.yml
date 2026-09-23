@@ -1,0 +1,42 @@
+name: transform
+
+# Runs after ingestion finishes, so there is something new to read. It runs
+# even when ingestion reported failure: ingestion fails if any single company
+# fails, and the companies that did land should still be transformed. A
+# genuinely stalled pipeline is reported by the freshness tests instead.
+on:
+  workflow_run:
+    workflows: [ingest]
+    types: [completed]
+  workflow_dispatch:
+
+# Two runs would both build a database and overwrite the same key.
+concurrency:
+  group: transform
+  cancel-in-progress: false
+
+jobs:
+  transform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      STORAGE_BACKEND: b2
+      B2_INGEST_KEY_ID: ${{ secrets.B2_INGEST_KEY_ID }}
+      B2_INGEST_KEY: ${{ secrets.B2_INGEST_KEY }}
+      B2_BUCKET: ${{ vars.B2_BUCKET }}
+      B2_ENDPOINT: ${{ vars.B2_ENDPOINT }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.1.0
+      - run: uv sync --locked --no-dev
+
+      # dbt build runs each model and its tests together, skipping anything
+      # downstream of a failure. RAW_ROOT is unset, so models read the bucket.
+      - name: Build and test models
+        working-directory: transform
+        run: |
+          uv run dbt deps
+          uv run dbt build --profiles-dir .
+
+      - name: Publish database
+        run: uv run xbrl-publish-warehouse
