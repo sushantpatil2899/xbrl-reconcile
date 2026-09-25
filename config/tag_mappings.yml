@@ -1,0 +1,147 @@
+# How raw SEC tags become canonical concepts.
+#
+# Order inside `tags` is the priority: the first tag a company reports for a
+# period wins. A tag is only listed when it means the concept itself. Component
+# tags (a part of a total) are deliberately absent rather than ranked last,
+# because a tag ranked last still wins whenever nothing above it matches.
+#
+# Confidence here means "standard tag, used consistently across the sector",
+# not "verified against the filing's own arithmetic". Phase 6 will check
+# mappings against each filing's calculation linkbase and can upgrade or
+# contradict these.
+#
+#   high    the standard tag for this total, or a valid alternative form
+#   medium  a tag retired by a rule change, or a different reporting basis
+#   low     a judgement call, to be documented in its note
+#
+# ifrs-full tags are ranked last because they follow different accounting
+# rules. Only Atlassian reports them, for periods ending 2016 to 2018.
+
+concepts:
+  revenue:
+    statement: income_statement
+    unit: USD
+    tags:
+      - { tag: "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax", confidence: high }
+      - { tag: "us-gaap:RevenueFromContractWithCustomerIncludingAssessedTax", confidence: high, note: "Used by CrowdStrike" }
+      - { tag: "us-gaap:Revenues", confidence: high }
+      - { tag: "us-gaap:SalesRevenueNet", confidence: medium, note: "Retired in 2018 when ASC 606 took effect" }
+      - { tag: "ifrs-full:Revenue", confidence: medium }
+
+  cost_of_revenue:
+    statement: income_statement
+    unit: USD
+    tags:
+      - { tag: "us-gaap:CostOfRevenue", confidence: high }
+      - { tag: "us-gaap:CostOfGoodsAndServicesSold", confidence: high }
+      - { tag: "us-gaap:CostOfServices", confidence: medium, note: "Services only; used before ASC 606 by some filers" }
+      - { tag: "us-gaap:CostOfGoodsSold", confidence: medium }
+      - { tag: "ifrs-full:CostOfSales", confidence: medium }
+
+  gross_profit:
+    statement: income_statement
+    unit: USD
+    tags:
+      - { tag: "us-gaap:GrossProfit", confidence: high }
+      - { tag: "ifrs-full:GrossProfit", confidence: medium }
+
+  operating_expenses:
+    statement: income_statement
+    unit: USD
+    # Operating expenses excluding cost of revenue. us-gaap:CostsAndExpenses is
+    # deliberately absent: it includes cost of revenue, so it is a different
+    # measure. Intuit reports only that, so its operating expenses are derived.
+    tags:
+      - { tag: "us-gaap:OperatingExpenses", confidence: high }
+      - { tag: "ifrs-full:OperatingExpense", confidence: medium }
+
+  operating_income:
+    statement: income_statement
+    unit: USD
+    tags:
+      - { tag: "us-gaap:OperatingIncomeLoss", confidence: high }
+      - { tag: "ifrs-full:ProfitLossFromOperatingActivities", confidence: medium }
+
+  net_income:
+    statement: income_statement
+    unit: USD
+    tags:
+      - { tag: "us-gaap:NetIncomeLoss", confidence: high }
+      - { tag: "us-gaap:ProfitLoss", confidence: medium, note: "Includes noncontrolling interests" }
+      - { tag: "ifrs-full:ProfitLossAttributableToOwnersOfParent", confidence: medium }
+
+  eps_diluted:
+    statement: income_statement
+    unit: USD/shares
+    tags:
+      - { tag: "us-gaap:EarningsPerShareDiluted", confidence: high }
+      - { tag: "ifrs-full:DilutedEarningsLossPerShare", confidence: medium }
+
+  shares_diluted:
+    statement: income_statement
+    unit: shares
+    tags:
+      - { tag: "us-gaap:WeightedAverageNumberOfDilutedSharesOutstanding", confidence: high }
+      - { tag: "ifrs-full:AdjustedWeightedAverageShares", confidence: medium }
+
+  total_assets:
+    statement: balance_sheet
+    unit: USD
+    tags:
+      - { tag: "us-gaap:Assets", confidence: high }
+      - { tag: "ifrs-full:Assets", confidence: medium }
+
+  total_liabilities:
+    statement: balance_sheet
+    unit: USD
+    # LiabilitiesAndStockholdersEquity is absent: it equals total assets, not
+    # total liabilities. Autodesk reports only that, so its total liabilities
+    # have no mapping and appear in the coverage report.
+    tags:
+      - { tag: "us-gaap:Liabilities", confidence: high }
+      - { tag: "ifrs-full:Liabilities", confidence: medium }
+
+  total_equity:
+    statement: balance_sheet
+    unit: USD
+    tags:
+      - { tag: "us-gaap:StockholdersEquity", confidence: high }
+      - { tag: "us-gaap:StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest", confidence: medium, note: "Includes noncontrolling interests" }
+      - { tag: "ifrs-full:Equity", confidence: medium }
+
+  cash:
+    statement: balance_sheet
+    unit: USD
+    tags:
+      - { tag: "us-gaap:CashAndCashEquivalentsAtCarryingValue", confidence: high }
+      - { tag: "ifrs-full:CashAndCashEquivalents", confidence: medium }
+
+  operating_cash_flow:
+    statement: cash_flow
+    unit: USD
+    tags:
+      - { tag: "us-gaap:NetCashProvidedByUsedInOperatingActivities", confidence: high }
+      - { tag: "us-gaap:NetCashProvidedByUsedInOperatingActivitiesContinuingOperations", confidence: medium, note: "Excludes discontinued operations" }
+      - { tag: "ifrs-full:CashFlowsFromUsedInOperatingActivities", confidence: medium }
+
+  investing_cash_flow:
+    statement: cash_flow
+    unit: USD
+    tags:
+      - { tag: "us-gaap:NetCashProvidedByUsedInInvestingActivities", confidence: high }
+      - { tag: "us-gaap:NetCashProvidedByUsedInInvestingActivitiesContinuingOperations", confidence: medium, note: "Excludes discontinued operations" }
+      - { tag: "ifrs-full:CashFlowsFromUsedInInvestingActivities", confidence: medium }
+
+  financing_cash_flow:
+    statement: cash_flow
+    unit: USD
+    tags:
+      - { tag: "us-gaap:NetCashProvidedByUsedInFinancingActivities", confidence: high }
+      - { tag: "us-gaap:NetCashProvidedByUsedInFinancingActivitiesContinuingOperations", confidence: medium, note: "Excludes discontinued operations" }
+      - { tag: "ifrs-full:CashFlowsFromUsedInFinancingActivities", confidence: medium }
+
+company_overrides:
+  - cik: 1353283
+    concept: net_income
+    prefer: ["us-gaap:NetIncomeLossAvailableToCommonStockholdersBasic"]
+    note: "Splunk reports no NetIncomeLoss; this is net income after preferred dividends"
