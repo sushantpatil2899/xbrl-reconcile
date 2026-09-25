@@ -20,6 +20,10 @@ vars:
   # expressed as a fraction: companies differ in scale by orders of magnitude.
   candidate_tolerance: 0.001
 
+  # How far two filings may differ before it counts as a restatement rather than
+  # the same figure reported again. Also a fraction.
+  restatement_tolerance: 0.001
+
 models:
   xbrl_reconcile:
     staging:

@@ -1,0 +1,51 @@
+version: 2
+
+models:
+  - name: int_facts_resolved
+    description: >
+      One row per company, concept and period. Carries the latest filed value
+      alongside the originally reported one, so a restatement is visible rather
+      than silently applied.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cik, concept, period_start, period_end]
+    columns:
+      - name: cik
+        tests: [not_null]
+      - name: ticker
+        tests: [not_null]
+      - name: concept
+        tests: [not_null]
+      - name: period_end
+        tests: [not_null]
+      - name: value
+        description: The latest filed value, which is today's best understanding.
+        tests: [not_null]
+      - name: originally_reported_value
+        description: >
+          What the company reported first for this period, within the same
+          accounting basis. Equal to value when nothing was ever restated.
+        tests: [not_null]
+      - name: basis
+        description: >
+          us_gaap where the company reported it at all, otherwise ifrs. Chosen
+          deliberately rather than by filing date, so peer comparisons stay valid.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["us_gaap", "ifrs"]
+      - name: confidence
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["high", "medium", "low"]
+      - name: restatement_count
+        description: Distinct values reported for this period, within one basis.
+        tests: [not_null]
+      - name: was_restated
+        tests: [not_null]
+      - name: filing_count
+        tests: [not_null]
