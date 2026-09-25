@@ -5,10 +5,11 @@ from datetime import UTC, datetime
 import pytest
 
 from tests.ingest.fakes import FakeSecApi, submissions_json
-from xbrl_reconcile.config import Company
+from xbrl_reconcile.config import Company, ConfigError
 from xbrl_reconcile.ingest.http import HttpError
 from xbrl_reconcile.ingest.run import build_storage, run_ingestion
 from xbrl_reconcile.ingest.storage import STATE_KEY, LocalStorage, S3Storage, config_snapshot_key
+from xbrl_reconcile.mappings import parse_mappings
 
 MORNING = datetime(2026, 9, 16, 6, 15, 2, tzinfo=UTC)
 AFTERNOON = datetime(2026, 9, 16, 14, 0, 0, tzinfo=UTC)
@@ -232,3 +233,85 @@ def test_state_written_before_the_heartbeat_existed_is_still_understood(tmp_path
     state = json.loads(storage.read(STATE_KEY))
     assert state["last_run"] == "2026-09-16T061502Z"
     assert state["companies"]["0000000001"]["accession"] == "acc-1"
+
+
+MAPPINGS = parse_mappings(
+    {
+        "concepts": {
+            "revenue": {
+                "statement": "income_statement",
+                "unit": "USD",
+                "tags": [{"tag": "us-gaap:Revenues", "confidence": "high"}],
+            }
+        },
+        "company_overrides": [
+            {"cik": 1, "concept": "revenue", "ignore": ["us-gaap:SalesRevenueServicesNet"]}
+        ],
+    }
+)
+
+
+def test_mapping_snapshots_record_concepts_and_overrides(tmp_path):
+    api = FakeSecApi(
+        submissions={"0000000001": submissions_json([("10-Q", "acc-1", "2026-09-01")])},
+        companyfacts={"0000000001": b"{}"},
+    )
+    storage = LocalStorage(tmp_path)
+
+    run_ingestion([company(1, "AAA")], api, storage, MORNING, mappings=MAPPINGS)
+
+    concepts = json.loads(storage.read(config_snapshot_key("tag_mappings", "2026-09-16T061502Z")))
+    assert concepts == [
+        {
+            "concept": "revenue",
+            "statement": "income_statement",
+            "unit": "USD",
+            "taxonomy": "us-gaap",
+            "tag": "Revenues",
+            "priority": 10,
+            "confidence": "high",
+            "note": "",
+        }
+    ]
+    overrides = json.loads(
+        storage.read(config_snapshot_key("tag_mapping_overrides", "2026-09-16T061502Z"))
+    )
+    assert overrides[0]["mode"] == "ignore"
+    assert overrides[0]["tag"] == "SalesRevenueServicesNet"
+
+
+def test_mapping_snapshots_are_skipped_when_no_mappings_are_given(tmp_path):
+    """Ingestion still works without a mapping config, for example before Phase 3."""
+    api = FakeSecApi(
+        submissions={"0000000001": submissions_json([("10-Q", "acc-1", "2026-09-01")])},
+        companyfacts={"0000000001": b"{}"},
+    )
+    storage = LocalStorage(tmp_path)
+
+    run_ingestion([company(1, "AAA")], api, storage, MORNING)
+
+    assert storage.read(config_snapshot_key("tag_mappings", "2026-09-16T061502Z")) is None
+
+
+def test_an_override_for_an_unknown_company_aborts_before_any_sec_request(tmp_path):
+    bad = parse_mappings(
+        {
+            "concepts": {
+                "revenue": {
+                    "statement": "income_statement",
+                    "unit": "USD",
+                    "tags": [{"tag": "us-gaap:Revenues", "confidence": "high"}],
+                }
+            },
+            "company_overrides": [{"cik": 999, "concept": "revenue", "ignore": ["us-gaap:X"]}],
+        }
+    )
+    api = FakeSecApi(
+        submissions={"0000000001": submissions_json([("10-Q", "acc-1", "2026-09-01")])},
+        companyfacts={"0000000001": b"{}"},
+    )
+
+    with pytest.raises(ConfigError, match="999"):
+        run_ingestion([company(1, "AAA")], api, LocalStorage(tmp_path), MORNING, mappings=bad)
+
+    assert api.calls == []

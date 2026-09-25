@@ -1,0 +1,73 @@
+version: 2
+
+models:
+  - name: stg_tag_mappings
+    description: >
+      One row per canonical concept and candidate tag. Order within a concept is
+      given by priority: the lowest priority tag a company reports wins.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [concept, taxonomy, tag]
+    columns:
+      - name: concept
+        tests: [not_null]
+      - name: statement
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["income_statement", "balance_sheet", "cash_flow"]
+      - name: unit
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["USD", "USD/shares", "shares"]
+      - name: taxonomy
+        tests: [not_null]
+      - name: tag
+        tests: [not_null]
+      - name: priority
+        tests: [not_null]
+      - name: confidence
+        description: What the mapping is based on, never a verified fact about the filing.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["high", "medium", "low"]
+
+  - name: stg_tag_overrides
+    description: Per company exceptions to the global mapping order.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cik, concept, mode, taxonomy, tag]
+    columns:
+      - name: cik
+        description: Must be a configured company, or the override silently does nothing.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_companies')
+                field: cik
+      - name: concept
+        description: Must be a mapped concept, or the override silently does nothing.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_tag_mappings')
+                field: concept
+      - name: mode
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["prefer", "ignore"]
+      - name: taxonomy
+        tests: [not_null]
+      - name: tag
+        tests: [not_null]
