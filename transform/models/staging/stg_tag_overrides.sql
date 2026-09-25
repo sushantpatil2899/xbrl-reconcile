@@ -8,6 +8,7 @@ select
     taxonomy,
     tag,
     position,
+    confidence,
     from_year,
     through_year,
     note,
@@ -21,6 +22,7 @@ from read_json(
         taxonomy: 'VARCHAR',
         tag: 'VARCHAR',
         position: 'INTEGER',
+        confidence: 'VARCHAR',
         from_year: 'INTEGER',
         through_year: 'INTEGER',
         note: 'VARCHAR'

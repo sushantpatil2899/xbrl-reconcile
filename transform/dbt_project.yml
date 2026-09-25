@@ -16,9 +16,15 @@ vars:
   freshness_warn_days: 3
   freshness_error_days: 14
 
+  # How far two candidate tags may differ before the disagreement counts,
+  # expressed as a fraction: companies differ in scale by orders of magnitude.
+  candidate_tolerance: 0.001
+
 models:
   xbrl_reconcile:
     staging:
+      +materialized: table
+    intermediate:
       +materialized: table
 
 data_tests:

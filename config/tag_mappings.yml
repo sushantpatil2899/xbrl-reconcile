@@ -144,4 +144,8 @@ company_overrides:
   - cik: 1353283
     concept: net_income
     prefer: ["us-gaap:NetIncomeLossAvailableToCommonStockholdersBasic"]
-    note: "Splunk reports no NetIncomeLoss; this is net income after preferred dividends"
+    confidence: medium
+    note: >
+      Splunk reports no NetIncomeLoss. This tag is net income after preferred
+      dividends, and Splunk reports zero preferred shares outstanding in every
+      year, so the two are equal.

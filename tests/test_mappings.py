@@ -209,6 +209,7 @@ def test_rows_flatten_concepts_and_overrides_for_the_snapshot():
             "taxonomy": "us-gaap",
             "tag": "SalesRevenueServicesNet",
             "position": 10,
+            "confidence": "low",
             "from_year": None,
             "through_year": None,
             "note": "",
@@ -252,3 +253,22 @@ def test_load_mappings_reads_yaml(tmp_path):
     )
     config = load_mappings(path)
     assert config.concepts["revenue"].tags[0].tag == "Revenues"
+
+
+def test_override_confidence_defaults_to_low():
+    """A tag used for one company on our judgement is a weaker claim."""
+    overrides = [{"cik": 1, "concept": "revenue", "prefer": ["us-gaap:X"]}]
+    [override] = parse_mappings(make_config(overrides=overrides)).overrides
+    assert override.confidence == "low"
+
+
+def test_override_confidence_can_be_stated():
+    overrides = [{"cik": 1, "concept": "revenue", "prefer": ["us-gaap:X"], "confidence": "medium"}]
+    [override] = parse_mappings(make_config(overrides=overrides)).overrides
+    assert override.confidence == "medium"
+
+
+def test_override_with_unknown_confidence_is_rejected():
+    overrides = [{"cik": 1, "concept": "revenue", "prefer": ["us-gaap:X"], "confidence": "certain"}]
+    with pytest.raises(ConfigError, match="certain"):
+        parse_mappings(make_config(overrides=overrides))

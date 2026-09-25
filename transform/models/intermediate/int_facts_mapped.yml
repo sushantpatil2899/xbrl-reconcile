@@ -1,0 +1,58 @@
+version: 2
+
+models:
+  - name: int_facts_mapped
+    description: >
+      SEC tags resolved to canonical concepts, one row per company, concept,
+      period and filing. Resolution is per filing so that restatements stay
+      visible for int_facts_resolved to handle deliberately.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cik, concept, period_start, period_end, accession]
+    columns:
+      - name: cik
+        tests: [not_null]
+      - name: ticker
+        tests: [not_null]
+      - name: concept
+        description: Our canonical concept, not SEC's tag name.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_tag_mappings')
+                field: concept
+      - name: period_end
+        tests: [not_null]
+      - name: period_kind
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["instant", "quarter", "half", "nine_month", "annual", "other"]
+      - name: value
+        tests: [not_null]
+      - name: source_tag
+        description: The SEC tag the value came from, as taxonomy:Tag.
+        tests: [not_null]
+      - name: basis
+        description: Which accounting rulebook the value was reported under.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["us_gaap", "ifrs"]
+      - name: confidence
+        description: >
+          The configured confidence, downgraded one level when candidate tags
+          disagreed about the value.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["high", "medium", "low"]
+      - name: accession
+        tests: [not_null]
+      - name: candidate_count
+        tests: [not_null]

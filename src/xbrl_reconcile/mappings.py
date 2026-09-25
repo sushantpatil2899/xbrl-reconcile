@@ -17,7 +17,20 @@ STATEMENTS = {"income_statement", "balance_sheet", "cash_flow"}
 
 CONCEPT_KEYS = {"statement", "unit", "tags"}
 TAG_KEYS = {"tag", "confidence", "note"}
-OVERRIDE_KEYS = {"cik", "concept", "prefer", "ignore", "from_year", "through_year", "note"}
+OVERRIDE_KEYS = {
+    "cik",
+    "concept",
+    "prefer",
+    "ignore",
+    "confidence",
+    "from_year",
+    "through_year",
+    "note",
+}
+
+# A tag used for one company on our judgement is a weaker claim than a sector
+# wide standard tag, so an override that introduces a tag defaults to low.
+DEFAULT_OVERRIDE_CONFIDENCE = "low"
 
 PRIORITY_STEP = 10
 
@@ -50,6 +63,7 @@ class CompanyOverride:
     concept: str
     prefer: tuple[str, ...] = ()
     ignore: tuple[str, ...] = ()
+    confidence: str = DEFAULT_OVERRIDE_CONFIDENCE
     from_year: int | None = None
     through_year: int | None = None
     note: str = ""
@@ -92,6 +106,7 @@ class MappingConfig:
                             "taxonomy": taxonomy,
                             "tag": tag,
                             "position": position * PRIORITY_STEP,
+                            "confidence": override.confidence,
                             "from_year": override.from_year,
                             "through_year": override.through_year,
                             "note": override.note,
@@ -231,6 +246,13 @@ def _parse_override(raw: dict, concepts: dict[str, ConceptSpec], index: int) -> 
     for qualified in prefer + ignore:
         _split_qualified_tag(qualified, label)
 
+    confidence = str(raw.get("confidence", DEFAULT_OVERRIDE_CONFIDENCE))
+    if confidence not in CONFIDENCE_LEVELS:
+        raise ConfigError(
+            f"{label}: unknown confidence '{confidence}', "
+            f"expected one of {sorted(CONFIDENCE_LEVELS)}"
+        )
+
     from_year = None if raw.get("from_year") is None else int(raw["from_year"])
     through_year = None if raw.get("through_year") is None else int(raw["through_year"])
     if from_year is not None and through_year is not None and through_year < from_year:
@@ -241,6 +263,7 @@ def _parse_override(raw: dict, concepts: dict[str, ConceptSpec], index: int) -> 
         concept=concept,
         prefer=prefer,
         ignore=ignore,
+        confidence=confidence,
         from_year=from_year,
         through_year=through_year,
         note=str(raw.get("note", "")),
