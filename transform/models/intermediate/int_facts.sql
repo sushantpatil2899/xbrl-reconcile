@@ -1,0 +1,57 @@
+-- The intermediate layer's output: reported values and derived ones together,
+-- one row per company, concept and period. This is what the marts will read.
+select
+    cik,
+    ticker,
+    concept,
+    statement,
+    period_start,
+    period_end,
+    period_kind,
+    unit,
+    value,
+    originally_reported_value,
+    source_tag,
+    confidence,
+    cast(null as varchar) as inputs_confidence,
+    basis,
+    accession,
+    form,
+    filed_date,
+    first_filed_date,
+    last_filed_date,
+    filing_count,
+    restatement_count,
+    was_restated,
+    candidate_count,
+    candidates_disagree
+from {{ ref('int_facts_resolved') }}
+
+union all
+
+select
+    cik,
+    ticker,
+    concept,
+    statement,
+    period_start,
+    period_end,
+    period_kind,
+    unit,
+    value,
+    originally_reported_value,
+    source_tag,
+    confidence,
+    inputs_confidence,
+    basis,
+    accession,
+    form,
+    filed_date,
+    first_filed_date,
+    last_filed_date,
+    filing_count,
+    restatement_count,
+    was_restated,
+    1 as candidate_count,
+    false as candidates_disagree
+from {{ ref('int_facts_derived') }}

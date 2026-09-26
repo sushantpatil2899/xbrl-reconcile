@@ -1,0 +1,50 @@
+version: 2
+
+models:
+  - name: int_facts
+    description: >
+      The intermediate layer's output: one row per company, concept and period,
+      reported values and derived ones together. The marts read this.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cik, concept, period_start, period_end]
+    columns:
+      - name: cik
+        tests: [not_null]
+      - name: ticker
+        tests: [not_null]
+      - name: concept
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_tag_mappings')
+                field: concept
+      - name: period_end
+        tests: [not_null]
+      - name: value
+        tests: [not_null]
+      - name: originally_reported_value
+        tests: [not_null]
+      - name: confidence
+        description: >
+          How the value was obtained. `derived` means computed from other
+          concepts, never reported by the company.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["high", "medium", "low", "derived"]
+      - name: inputs_confidence
+        description: >
+          For derived values, the weakest confidence among the inputs. Null for
+          reported values.
+      - name: basis
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["us_gaap", "ifrs"]
+      - name: was_restated
+        tests: [not_null]

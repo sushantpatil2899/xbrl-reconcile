@@ -1,22 +1,27 @@
 {#
   Concepts computed from other concepts, for companies that never report them.
 
-  Intuit and Workday never tag gross profit. Intuit reports CostsAndExpenses
-  instead of OperatingExpenses. Autodesk reports only
+  Intuit and Workday never tag gross profit. Autodesk reports only
   LiabilitiesAndStockholdersEquity, never total liabilities. All are computable
   from accounting identities that hold for every filer in every year.
+
+  This model reads resolved values rather than per filing ones. A derived value
+  is never reported by anyone, so taking all inputs from a single filing buys no
+  provenance, while a statement that fails to add up is immediately visible. So
+  gross profit here always equals the published revenue minus the published cost
+  of revenue.
 
   Rules, in order of importance:
 
   1. A reported value is never replaced. A concept is derived only where the
-     company reported nothing for it in any filing for that period.
-  2. Every input comes from the same filing, so the result is a number that
-     filing could have contained. That is why this model sits before
-     int_facts_resolved rather than after it.
-  3. Inputs must share a basis and a period kind, so US GAAP revenue is never
+     company reported nothing for it in that period.
+  2. Inputs must share a basis and a period kind, so US GAAP revenue is never
      mixed with IFRS cost of sales.
-  4. If any input is missing, no row is produced and the gap stays visible in
+  3. If any input is missing, no row is produced and the gap stays visible in
      the coverage report.
+  4. Restatement metadata comes from the inputs: a derived value was restated if
+     any input was, and its original is the same formula over the inputs'
+     original values.
 
   The formulas live here rather than in config because they are universal
   identities, not judgements about companies. Which companies need them is
@@ -46,10 +51,10 @@
     },
 ] %}
 
-with mapped as (
+with resolved as (
 
     select *
-    from {{ ref('int_facts_mapped') }}
+    from {{ ref('int_facts_resolved') }}
     where period_kind != 'other'
 
 ),
@@ -73,11 +78,24 @@ candidates as (
             {%- endfor %}
             end
         ) as value,
+        sum(
+            case concept
+            {%- for term, sign in derivation.terms %}
+                when '{{ term }}' then {{ sign }} originally_reported_value
+            {%- endfor %}
+            end
+        ) as originally_reported_value,
         'derived:{{ derivation.expression }}' as source_tag,
         basis,
-        accession,
-        form,
-        filed_date,
+        -- The inputs may come from different filings, so the metadata spans them.
+        max(accession) as accession,
+        max(form) as form,
+        max(filed_date) as filed_date,
+        min(first_filed_date) as first_filed_date,
+        max(last_filed_date) as last_filed_date,
+        max(filing_count) as filing_count,
+        max(restatement_count) as restatement_count,
+        bool_or(was_restated) as was_restated,
         -- The weakest input decides how good the ingredients were.
         max(
             case confidence
@@ -86,13 +104,13 @@ candidates as (
                 else 3
             end
         ) as inputs_confidence_rank
-    from mapped
+    from resolved
     where concept in (
         {%- for term, sign in derivation.terms %}
         '{{ term }}'{{ "," if not loop.last }}
         {%- endfor %}
     )
-    group by cik, ticker, period_start, period_end, period_kind, basis, accession, form, filed_date
+    group by cik, ticker, period_start, period_end, period_kind, basis
     -- Every input must be present, or the concept is left unmapped.
     having count(distinct concept) = {{ derivation.terms | length }}
 {{ "union all" if not loop.last }}
@@ -100,15 +118,14 @@ candidates as (
 
 ),
 
-{#- A reported value always wins, so drop any period the company reported
-    itself, in any filing. -#}
+{#- A reported value always wins. -#}
 not_reported as (
 
     select candidates.*
     from candidates
     where not exists (
         select 1
-        from mapped reported
+        from resolved reported
         where reported.cik = candidates.cik
             and reported.concept = candidates.concept
             and reported.period_start is not distinct from candidates.period_start
@@ -127,15 +144,21 @@ select
     period_kind,
     unit,
     value,
+    originally_reported_value,
     source_tag,
-    basis,
-    accession,
-    form,
-    filed_date,
     'derived' as confidence,
     case inputs_confidence_rank
         when 1 then 'high'
         when 2 then 'medium'
         else 'low'
-    end as inputs_confidence
+    end as inputs_confidence,
+    basis,
+    accession,
+    form,
+    filed_date,
+    first_filed_date,
+    last_filed_date,
+    filing_count,
+    restatement_count,
+    was_restated
 from not_reported

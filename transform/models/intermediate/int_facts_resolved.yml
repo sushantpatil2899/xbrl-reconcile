@@ -37,18 +37,11 @@ models:
               arguments:
                 values: ["us_gaap", "ifrs"]
       - name: confidence
-        description: >
-          How the value was obtained. `derived` means computed from other
-          concepts, never reported by the company.
         tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ["high", "medium", "low", "derived"]
-      - name: inputs_confidence
-        description: >
-          For derived values, the weakest confidence among the inputs. Null for
-          reported values.
+                values: ["high", "medium", "low"]
       - name: restatement_count
         description: Distinct values reported for this period, within one basis.
         tests: [not_null]
