@@ -359,3 +359,27 @@ def test_component_rows_are_flat_for_sql():
             "note": "Filers without a total tag report these two parts",
         },
     ]
+
+
+def test_summable_axes_are_parsed():
+    config = parse_mappings(
+        {
+            **make_config(),
+            "summable_axes": [{"axis": "ProductOrService", "confidence": "medium", "note": "n"}],
+        }
+    )
+    assert config.summable_axis_rows() == [
+        {"axis": "ProductOrService", "confidence": "medium", "note": "n"}
+    ]
+
+
+def test_a_summable_axis_cannot_be_high_confidence():
+    with pytest.raises(ConfigError, match="high"):
+        parse_mappings(
+            {**make_config(), "summable_axes": [{"axis": "X", "confidence": "high"}]}
+        )
+
+
+def test_a_summable_axis_needs_a_name():
+    with pytest.raises(ConfigError, match="axis name"):
+        parse_mappings({**make_config(), "summable_axes": [{"confidence": "medium"}]})

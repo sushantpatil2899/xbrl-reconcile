@@ -162,6 +162,19 @@ concepts:
       - { tag: "us-gaap:NetCashProvidedByUsedInFinancingActivitiesContinuingOperations", confidence: medium, note: "Excludes discontinued operations" }
       - { tag: "ifrs-full:CashFlowsFromUsedInFinancingActivities", confidence: medium }
 
+# Axes whose members partition whatever they break down, so summing them
+# recovers a total the company never tagged. This is a claim about the axis, not
+# about any one concept: if an axis has a member that is itself a total, or
+# members that overlap, summing it would double count and it must not be listed.
+summable_axes:
+  - axis: ProductOrService
+    confidence: medium
+    note: >
+      Filers split income statement lines into product and service components
+      that add to the reported total. Workday reports cost of revenue only as
+      SubscriptionServices plus ProfessionalServices, and Intuit only as Service
+      plus ProductAndOther.
+
 company_overrides:
   - cik: 1353283
     concept: net_income

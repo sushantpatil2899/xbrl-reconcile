@@ -1,0 +1,61 @@
+version: 2
+
+models:
+  - name: stg_tag_summable_axes
+    description: >
+      Axes whose members partition whatever they break down. Listing an axis here
+      asserts that its members are disjoint parts of one whole.
+    columns:
+      - name: axis
+        tests: [not_null, unique]
+      - name: confidence
+        description: Capped below a reported total, because we assembled this one.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["medium", "low"]
+
+  - name: int_fsds_dimension_totals
+    description: >
+      Totals recovered by summing the members of one dimension, for concepts a
+      company reports only as a breakdown. Only produced where companyfacts has
+      nothing for the concept, so a recovered value can only fill a gap.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cik, concept, period_end, period_kind, unit, accession]
+    columns:
+      - name: cik
+        tests: [not_null]
+      - name: concept
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_tag_mappings')
+                field: concept
+      - name: value
+        tests: [not_null]
+      - name: member_count
+        description: Always at least two, because one member is not a breakdown.
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 2
+                inclusive: true
+      - name: axis
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_tag_summable_axes')
+                field: axis
+      - name: period_start_matched
+        description: >
+          True when the period start was taken from a period the company already
+          uses, which is what lets a recovered value line up with its statement.
+        tests: [not_null]
+      - name: source_tag
+        tests: [not_null]

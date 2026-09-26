@@ -235,11 +235,41 @@ usable_sums as (
 
 ),
 
+{#- Totals recovered from the Data Sets by summing one dimension, for concepts a
+    company reports only as a breakdown. Ranked behind every reported total and
+    every component sum, and only produced where companyfacts has nothing for the
+    concept, so this can only fill a gap. -#}
+recovered_totals as (
+
+    select
+        totals.cik,
+        totals.ticker,
+        totals.concept,
+        specs.statement,
+        totals.period_start,
+        totals.period_end,
+        totals.period_kind,
+        totals.unit,
+        totals.value,
+        totals.source_tag,
+        totals.confidence as configured_confidence,
+        case when totals.taxonomy = 'ifrs-full' then 'ifrs' else 'us_gaap' end as basis,
+        totals.accession,
+        totals.form,
+        totals.filed_date,
+        2000 as effective_priority
+    from {{ ref('int_fsds_dimension_totals') }} totals
+    join concept_specs specs on specs.concept = totals.concept
+
+),
+
 all_candidates as (
 
     select * from deduplicated
     union all
     select * from usable_sums
+    union all
+    select * from recovered_totals
 
 ),
 

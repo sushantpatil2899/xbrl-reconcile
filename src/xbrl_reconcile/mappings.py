@@ -17,6 +17,7 @@ STATEMENTS = {"income_statement", "balance_sheet", "cash_flow"}
 
 CONCEPT_KEYS = {"statement", "unit", "tags", "components"}
 COMPONENT_KEYS = {"tags", "confidence", "note"}
+SUMMABLE_AXIS_KEYS = {"axis", "confidence", "note"}
 TAG_KEYS = {"tag", "confidence", "note"}
 OVERRIDE_KEYS = {
     "cik",
@@ -89,9 +90,19 @@ class CompanyOverride:
 
 
 @dataclass(frozen=True)
+class SummableAxis:
+    """An axis whose members partition whatever they break down."""
+
+    axis: str
+    confidence: str
+    note: str = ""
+
+
+@dataclass(frozen=True)
 class MappingConfig:
     concepts: dict[str, ConceptSpec] = field(default_factory=dict)
     overrides: tuple[CompanyOverride, ...] = ()
+    summable_axes: tuple[SummableAxis, ...] = ()
 
     def concept_rows(self) -> list[dict]:
         """One row per concept and tag, the shape dbt reads."""
@@ -129,6 +140,12 @@ class MappingConfig:
             for tag in component.tags
         ]
 
+    def summable_axis_rows(self) -> list[dict]:
+        return [
+            {"axis": entry.axis, "confidence": entry.confidence, "note": entry.note}
+            for entry in self.summable_axes
+        ]
+
     def override_rows(self) -> list[dict]:
         """One row per override and tag. Flat rows are far easier to join in SQL."""
         rows = []
@@ -161,7 +178,9 @@ def load_mappings(path: Path) -> MappingConfig:
 def parse_mappings(data: dict) -> MappingConfig:
     if not isinstance(data, dict):
         raise ConfigError("mapping config must be a mapping with 'concepts'")
-    _reject_unknown(set(data), {"concepts", "company_overrides"}, "top level")
+    _reject_unknown(
+        set(data), {"concepts", "company_overrides", "summable_axes"}, "top level"
+    )
 
     raw_concepts = data.get("concepts") or {}
     if not raw_concepts:
@@ -184,7 +203,29 @@ def parse_mappings(data: dict) -> MappingConfig:
         _parse_override(raw, concepts, index)
         for index, raw in enumerate(data.get("company_overrides") or [])
     )
-    return MappingConfig(concepts=concepts, overrides=overrides)
+    summable_axes = tuple(
+        _parse_summable_axis(raw, index)
+        for index, raw in enumerate(data.get("summable_axes") or [])
+    )
+    return MappingConfig(concepts=concepts, overrides=overrides, summable_axes=summable_axes)
+
+
+def _parse_summable_axis(raw: dict, index: int) -> SummableAxis:
+    label = f"summable axis {index}"
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{label} must be a mapping")
+    _reject_unknown(set(raw), SUMMABLE_AXIS_KEYS, label)
+    if not raw.get("axis"):
+        raise ConfigError(f"{label} needs an axis name")
+    confidence = str(raw.get("confidence", DEFAULT_COMPONENT_CONFIDENCE))
+    if confidence not in COMPONENT_CONFIDENCE_LEVELS:
+        raise ConfigError(
+            f"{label}: confidence '{confidence}' is not allowed; a total recovered by "
+            f"summing members must be one of {sorted(COMPONENT_CONFIDENCE_LEVELS)}"
+        )
+    return SummableAxis(
+        axis=str(raw["axis"]), confidence=confidence, note=str(raw.get("note", ""))
+    )
 
 
 def validate_against_companies(config: MappingConfig, companies: list[Company]) -> list[str]:
