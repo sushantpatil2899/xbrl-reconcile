@@ -1,0 +1,96 @@
+version: 2
+
+models:
+  - name: stg_fsds_submissions
+    description: >
+      One row per filing in the landed Financial Statement Data Set quarters.
+      The only file that maps a filing to a company, so every other Data Set
+      model joins through it.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [accession]
+    columns:
+      - name: accession
+        tests: [not_null]
+      - name: cik
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_companies')
+                field: cik
+      - name: ticker
+        tests: [not_null]
+      - name: filed_date
+        description: Carried onto every fact, so an amended filing resolves by date.
+        tests: [not_null]
+      - name: quarter
+        tests: [not_null]
+
+  - name: stg_fsds_tags
+    description: >
+      Tag definitions from the landed quarters. A custom tag's declared version is
+      the accession number of the filing that declared it, so taxonomy is
+      normalized to `custom` and the raw version kept alongside.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [tag, declared_version]
+    columns:
+      - name: tag
+        tests: [not_null]
+      - name: is_custom
+        tests: [not_null]
+      - name: taxonomy
+        tests: [not_null]
+
+  - name: stg_fsds_facts
+    description: >
+      One row per fact from the landed quarters, carrying what companyfacts drops:
+      dimensional breakdowns and custom tags. Dimensions are parsed only when a
+      fact has exactly one, because a fact split across two dimensions cannot be
+      summed with its siblings without double counting.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - accession
+              - qualified_tag
+              - period_end
+              - period_kind
+              - unit
+              - segments
+              - coregistrant
+    columns:
+      - name: accession
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_fsds_submissions')
+                field: accession
+      - name: ticker
+        tests: [not_null]
+      - name: qualified_tag
+        description: taxonomy:Tag, matching the mapping config's convention.
+        tests: [not_null]
+      - name: period_end
+        tests: [not_null]
+      - name: period_kind
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["instant", "quarter", "half", "nine_month", "annual", "other"]
+      - name: value
+        tests: [not_null]
+      - name: dimension_count
+        tests: [not_null]
+      - name: is_consolidated
+        description: True when the fact carries no dimensions, so it is a company total.
+        tests: [not_null]
+      - name: axis
+        description: Populated only when exactly one dimension is present.
+      - name: member
+        description: Populated only when exactly one dimension is present.
