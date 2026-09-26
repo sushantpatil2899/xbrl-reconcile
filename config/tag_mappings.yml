@@ -127,6 +127,9 @@ concepts:
   temporary_equity:
     statement: balance_sheet
     unit: USD
+    # Most companies have no redeemable preferred stock, so its absence is an
+    # answer rather than a coverage gap. Only 20 of the 28 report it in any year.
+    optional: true
     tags:
       - { tag: "us-gaap:TemporaryEquityCarryingAmountAttributableToParent", confidence: high }
       - { tag: "us-gaap:TemporaryEquityCarryingAmountIncludingPortionAttributableToNoncontrollingInterests", confidence: medium, note: "Includes noncontrolling interests" }

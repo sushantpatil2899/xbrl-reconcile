@@ -22,13 +22,20 @@ models:
           concepts, ambiguous when candidate tags disagreed and we chose,
           no_balance_sheet for a balance sheet concept in the company's earliest
           fiscal year (US rules require three income statements but only two
-          balance sheets, so that gap can never be filled), missing when there is
-          nothing and something could be done about it.
+          balance sheets, so that gap can never be filled), not_applicable for an
+          optional concept the company legitimately has none of, missing when
+          there is nothing and something could be done about it.
         tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ["reported", "derived", "ambiguous", "no_balance_sheet", "missing"]
+                values:
+                  - reported
+                  - derived
+                  - ambiguous
+                  - no_balance_sheet
+                  - not_applicable
+                  - missing
 
   - name: mart_unmapped_tags
     description: >

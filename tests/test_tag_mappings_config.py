@@ -66,3 +66,10 @@ def test_snapshot_rows_are_complete():
     assert all(row["taxonomy"] and row["tag"] and row["priority"] for row in rows)
     assert all(row["unit"] in UNITS for row in rows)
     assert config.override_rows(), "the Splunk net income override should produce a row"
+
+
+def test_only_temporary_equity_is_optional():
+    """Every other concept is expected from every filer."""
+    config = load_mappings(MAPPINGS)
+    optional = {name for name, spec in config.concepts.items() if spec.optional}
+    assert optional == {"temporary_equity"}

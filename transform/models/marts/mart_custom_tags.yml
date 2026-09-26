@@ -1,0 +1,28 @@
+version: 2
+
+models:
+  - name: mart_custom_tags
+    description: >
+      Custom tags each company has invented, from the Financial Statement Data
+      Sets. The evidence that filers extend the standard taxonomy, and the input
+      to deciding whether one is worth mapping.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cik, qualified_tag]
+    columns:
+      - name: ticker
+        tests: [not_null]
+      - name: qualified_tag
+        description: Always prefixed custom, because a custom tag has no standard taxonomy.
+        tests: [not_null]
+      - name: facts
+        tests: [not_null]
+      - name: peers_using_same_name
+        description: >
+          How many configured companies invented a tag of this name. Several
+          suggests a concept the standard taxonomy is missing.
+        tests: [not_null]
+      - name: is_mapped
+        description: Whether the mapping config already maps this tag to a concept.
+        tests: [not_null]

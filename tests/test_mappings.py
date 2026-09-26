@@ -194,6 +194,7 @@ def test_rows_flatten_concepts_and_overrides_for_the_snapshot():
         "concept": "revenue",
         "statement": "income_statement",
         "unit": "USD",
+        "is_optional": False,
         "taxonomy": "us-gaap",
         "tag": "RevenueFromContractWithCustomerExcludingAssessedTax",
         "priority": 10,
@@ -383,3 +384,24 @@ def test_a_summable_axis_cannot_be_high_confidence():
 def test_a_summable_axis_needs_a_name():
     with pytest.raises(ConfigError, match="axis name"):
         parse_mappings({**make_config(), "summable_axes": [{"confidence": "medium"}]})
+
+
+def test_concepts_are_required_unless_declared_optional():
+    concepts = {
+        "revenue": dict(REVENUE),
+        "temporary_equity": {
+            "statement": "balance_sheet",
+            "unit": "USD",
+            "optional": True,
+            "tags": [{"tag": "us-gaap:TemporaryEquityCarryingAmount", "confidence": "high"}],
+        },
+    }
+    config = parse_mappings(make_config(concepts))
+    assert config.concepts["revenue"].optional is False
+    assert config.concepts["temporary_equity"].optional is True
+
+
+def test_optional_is_carried_into_the_snapshot_rows():
+    concepts = {"revenue": {**REVENUE, "optional": True}}
+    rows = parse_mappings(make_config(concepts)).concept_rows()
+    assert all(row["is_optional"] for row in rows)

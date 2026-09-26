@@ -40,7 +40,7 @@ fiscal_years as (
 
 concepts as (
 
-    select distinct concept, statement
+    select distinct concept, statement, is_optional
     from {{ ref('stg_tag_mappings') }}
 
 ),
@@ -53,7 +53,8 @@ spine as (
         fiscal_years.fiscal_year,
         fiscal_years.fiscal_year_end,
         concepts.concept,
-        concepts.statement
+        concepts.statement,
+        concepts.is_optional
     from fiscal_years
     cross join concepts
 
@@ -122,6 +123,9 @@ select
             and spine.statement = 'balance_sheet'
             and spine.fiscal_year = earliest_year.first_fiscal_year
             then 'no_balance_sheet'
+        -- An optional concept is one most filers legitimately have none of, so
+        -- its absence is an answer rather than something to go and map.
+        when facts.value is null and spine.is_optional then 'not_applicable'
         when facts.value is null then 'missing'
         when facts.confidence = 'derived' then 'derived'
         when facts.candidates_disagree then 'ambiguous'

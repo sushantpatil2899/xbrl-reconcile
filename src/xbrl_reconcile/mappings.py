@@ -15,7 +15,7 @@ from xbrl_reconcile.config import Company, ConfigError
 CONFIDENCE_LEVELS = {"high", "medium", "low"}
 STATEMENTS = {"income_statement", "balance_sheet", "cash_flow"}
 
-CONCEPT_KEYS = {"statement", "unit", "tags", "components"}
+CONCEPT_KEYS = {"statement", "unit", "tags", "components", "optional"}
 COMPONENT_KEYS = {"tags", "confidence", "note"}
 SUMMABLE_AXIS_KEYS = {"axis", "confidence", "note"}
 TAG_KEYS = {"tag", "confidence", "note"}
@@ -75,6 +75,10 @@ class ConceptSpec:
     unit: str
     tags: tuple[TagMapping, ...] = ()
     components: tuple[ComponentSet, ...] = ()
+    # True when most filers legitimately have none of this, so its absence is an
+    # answer rather than a gap. Declared rather than inferred: nothing in the
+    # facts distinguishes "the company has none" from "we failed to map it".
+    optional: bool = False
 
 
 @dataclass(frozen=True)
@@ -111,6 +115,7 @@ class MappingConfig:
                 "concept": concept.name,
                 "statement": concept.statement,
                 "unit": concept.unit,
+                "is_optional": concept.optional,
                 "taxonomy": mapping.taxonomy,
                 "tag": mapping.tag,
                 "priority": mapping.priority,
@@ -285,6 +290,7 @@ def _parse_concept(name: str, raw: dict) -> ConceptSpec:
         unit=str(raw["unit"]),
         tags=tuple(tags),
         components=components,
+        optional=bool(raw.get("optional", False)),
     )
 
 
