@@ -1,0 +1,47 @@
+version: 2
+
+models:
+  - name: mart_mapping_coverage
+    description: >
+      What is mapped and what is not, one row per company, concept and fiscal
+      year. A worklist for writing config, not a pass or fail check.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cik, concept, fiscal_year]
+    columns:
+      - name: ticker
+        tests: [not_null]
+      - name: fiscal_year
+        tests: [not_null]
+      - name: concept
+        tests: [not_null]
+      - name: status
+        description: >
+          reported when the company tagged it, derived when computed from other
+          concepts, ambiguous when candidate tags disagreed and we chose,
+          missing when there is nothing.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["reported", "derived", "ambiguous", "missing"]
+
+  - name: mart_unmapped_tags
+    description: >
+      Tags a company reports that match no mapping rule, with how many peers use
+      them. The raw material for writing new mappings.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cik, taxonomy, tag]
+    columns:
+      - name: ticker
+        tests: [not_null]
+      - name: tag
+        tests: [not_null]
+      - name: facts
+        tests: [not_null]
+      - name: peers_using
+        description: How many of the configured companies report this tag.
+        tests: [not_null]

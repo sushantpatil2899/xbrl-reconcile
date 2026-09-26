@@ -30,6 +30,8 @@ models:
       +materialized: table
     intermediate:
       +materialized: table
+    marts:
+      +materialized: table
 
 data_tests:
   xbrl_reconcile:
