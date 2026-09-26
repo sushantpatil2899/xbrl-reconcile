@@ -1,7 +1,7 @@
 # xbrl-reconcile: Design
 
-Status: Phases 0, 1 and 2 built. Later phases list open decisions only.
-Last updated: 2026-09-23
+Status: Phases 0, 1, 2 and 3 built. Later phases list open decisions only.
+Last updated: 2026-09-25
 
 ## 1. Goal
 
@@ -58,7 +58,7 @@ Verified against SEC data on 2026-09-16.
 | 0 | Foundation | Done. Repo layout, Python env, config, lint and tests in CI |
 | 1 | Ingestion | Done. companyfacts and submissions landed raw in Backblaze B2 daily; infra in Terraform |
 | 2 | dbt staging | Done. One row per fact, incremental, tested, published to B2 |
-| 3 | Mapping and intermediate | Tag mapping config, canonical values with confidence |
+| 3 | Mapping and intermediate | Done. 16 canonical concepts, confidence on every value, coverage report |
 | 4 | Custom tags | SEC Financial Statement Data Sets filtered to our companies |
 | 5 | Marts and tests | Income statement, balance sheet, cash flow, confidence report |
 | 6 | Linkbase verification | Parse calculation linkbase to back high confidence mappings |
@@ -382,11 +382,17 @@ form in the key would leave two permanent current values per period, since
 disagreements track filing date rather than form: total assets at 2018-01-31
 were 21,009,802,000 in the 10-K and 21,984,000,000 in the next 10-Q.
 
-**IFRS years are mapped, with a `basis` column.** Atlassian's ifrs-full annual
-revenue covers periods ending 2016 to 2018 and its us-gaap revenue covers 2021
-onward, so the two bases never share a business key. Every mart row carries
-`basis` as `us_gaap` or `ifrs`, and IFRS derived values are capped at medium
-confidence because the underlying rules differ.
+**IFRS years are mapped, with a `basis` column.** Every mart row carries `basis`
+as `us_gaap` or `ifrs`, and IFRS values are capped at medium confidence because
+the underlying rules differ.
+
+Corrected 2026-09-25: this section originally said the two bases never overlap,
+based on revenue alone. They do overlap. Atlassian reports net income under
+ifrs-full for periods ending 2016 to 2022 and under us-gaap from 2021, so 2021
+and 2022 exist under both, with values 117 million apart in 2021. They never
+share a business key, because the taxonomy is part of the key, but they do
+describe the same periods. Phase 3 resolves this by preferring us_gaap
+deliberately rather than by filing date (section 10.4).
 
 ## 9. Phase 2 as built: the staging layer
 
@@ -487,7 +493,197 @@ fails past `freshness_error_days`; both thresholds are vars.
 runs the same models with no credentials. CI leaves `RAW_ROOT` unset and gets
 the Backblaze path from `B2_BUCKET`.
 
-## 10. Open decisions for later phases
+## 10. Phase 3 as built: mapping and confidence
+
+Built 2026-09-24 to 2026-09-25. Turns 2,047 inconsistent SEC tags into 16
+canonical concepts, one value per company, concept and period, each carrying how
+it was obtained.
+
+### 10.1 The canonical concepts
+
+| Concept | Statement | Unit | Notes |
+|---|---|---|---|
+| revenue | income_statement | USD | |
+| cost_of_revenue | income_statement | USD | Total, not a component |
+| gross_profit | income_statement | USD | Derived where not reported |
+| operating_expenses | income_statement | USD | Excludes cost of revenue |
+| operating_income | income_statement | USD | |
+| net_income | income_statement | USD | Attributable to the parent |
+| eps_diluted | income_statement | USD/shares | |
+| shares_diluted | income_statement | shares | |
+| total_assets | balance_sheet | USD | |
+| total_liabilities | balance_sheet | USD | Derived where not reported |
+| temporary_equity | balance_sheet | USD | Redeemable convertible preferred stock, which sits between liabilities and equity |
+| total_equity | balance_sheet | USD | Includes noncontrolling interests |
+| cash | balance_sheet | USD | Excludes restricted cash |
+| operating_cash_flow | cash_flow | USD | |
+| investing_cash_flow | cash_flow | USD | |
+| financing_cash_flow | cash_flow | USD | |
+
+`operating_expenses` excludes cost of revenue because that is what
+us-gaap:OperatingExpenses means. `temporary_equity` exists because without it 72
+balance sheets did not balance.
+
+### 10.2 Config mechanisms
+
+`config/tag_mappings.yml` is validated in Python before dbt reads it, because a
+misspelled tag matches nothing and produces silence rather than an error. Three
+mechanisms, in the order they apply:
+
+| Mechanism | Purpose |
+|---|---|
+| Ordered `tags` per concept | The global priority list. First match wins. Position becomes a priority number, so no numbers are typed |
+| `company_overrides` with `prefer` | Puts a tag ahead of the global list for one company, and may introduce a tag that is not in the list at all. Carries its own confidence, defaulting to low |
+| `company_overrides` with `ignore` | Removes a tag from consideration for one company entirely, which is different from ranking it last |
+| `components` per concept | A set of tags that sum to the concept, used only when no total tag matched and every part is present. Never high confidence |
+
+Both configs are snapshotted to the bucket by the ingestion run
+(`raw/config/tag_mappings/`, `raw/config/tag_mapping_overrides/`,
+`raw/config/tag_components/`), so every published value traces to the rules that
+produced it. Ingestion validates the mapping config against the company config
+before making any SEC request.
+
+### 10.3 The model chain
+
+```
+stg_sec_facts, stg_tag_mappings, stg_tag_overrides, stg_tag_components
+        |
+int_facts_mapped      one row per company, concept, period and filing
+        |             tag chosen by priority; component sums as a fallback
+int_facts_resolved    one row per company, concept and period
+        |             latest filed wins, original kept, restatement counted
+int_facts_derived     concepts computed from resolved values
+        |
+int_facts             the layer's output: reported plus derived
+        |
+mart_mapping_coverage, mart_unmapped_tags
+```
+
+Derivation reads resolved values rather than per filing values, so a derived
+number always equals the published inputs it came from. Deriving per filing was
+tried first and produced statements that did not add up.
+
+### 10.4 Resolution rules
+
+- Resolution happens per filing first, so a restatement is never decided by
+  accident.
+- A company override may introduce a tag; global rules apply to every company.
+- Units must match the concept's declared unit, so a per share value cannot land
+  in a total.
+- Balance sheet concepts take instant facts, income and cash flow concepts take
+  durations.
+- US GAAP is preferred over IFRS deliberately, not by filing date, so a peer
+  comparable value wins wherever both exist.
+- Restatements are measured within one basis, so a rulebook change is not
+  mislabelled as a restatement.
+- Derivations are universal accounting identities and live in code:
+  `gross_profit = revenue - cost_of_revenue`,
+  `operating_expenses = revenue - cost_of_revenue - operating_income`,
+  `total_liabilities = total_assets - total_equity`. Which companies need them is
+  discovered from the data.
+
+### 10.5 The confidence model
+
+| Level | Meaning |
+|---|---|
+| high | The standard tag for this total, used consistently across the sector |
+| medium | A retired tag, a different reporting basis, a component sum, or a downgrade |
+| low | A judgement call for one company, documented in its note |
+| derived | Computed from other concepts, never reported by the company |
+
+`high` means "standard tag, used consistently", not "verified against the
+filing's own arithmetic". Phase 6 will check mappings against each filing's
+calculation linkbase and may upgrade or contradict these.
+
+Two adjustments:
+
+- **Disagreement downgrade.** When more than one candidate tag matched and the
+  values differ by more than `candidate_tolerance`, confidence drops one level,
+  because the choice was ours. Candidates that agree leave confidence alone: 781
+  of 47,254 rows were downgraded.
+- **`inputs_confidence`** carries the weakest input confidence for derived rows,
+  so a value derived from high confidence inputs is distinguishable from one
+  derived from low.
+
+### 10.6 Deliberate exclusions
+
+| Tag | Excluded from | Evidence |
+|---|---|---|
+| us-gaap:SalesRevenueServicesNet | revenue | Adobe's 2008 10-K reports Revenues 3,579,889,000 and this 183,347,000. A component |
+| us-gaap:CostsAndExpenses | operating_expenses | Includes cost of revenue: Intuit's revenue minus this equals operating income exactly |
+| us-gaap:LiabilitiesAndStockholdersEquity | total_liabilities | Equals total assets |
+| us-gaap:CostOfServices, us-gaap:CostOfGoodsSold | cost_of_revenue as totals | Reported together as parts. Handled by component summation instead |
+| us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents | cash | A superset of cash, and the companies concerned report the plain tag as well |
+
+A tag is excluded rather than ranked last, because a tag ranked last still wins
+whenever nothing above it matches.
+
+### 10.7 Measured results
+
+| Metric | Value |
+|---|---|
+| Rows in int_facts | 21,951 |
+| Companies, concepts | 28, 16 |
+| Coverage of the annual grid | 96.2 percent reported |
+| high / medium / derived | 20,877 / 881 / 193 |
+| Restated periods | 950 of 21,780, 4.4 percent |
+| dbt tests | 125 |
+| Python tests | 100 |
+
+Remaining gaps, 62 annual cells:
+
+| Group | Cells | Cause |
+|---|---|---|
+| Workday cost of revenue and gross profit | 26 | Reported dimensionally; companyfacts drops dimensional facts |
+| Intuit 2018 onward | 27 | Same: the missing expense detail is dimensional |
+| First year and IFRS transition edges | 9 | Structural |
+
+A further 64 cells are labelled `no_balance_sheet` rather than missing: US rules
+require three years of income statements but only two balance sheets, so a
+company's earliest fiscal year has no balance sheet at all.
+
+### 10.8 Traps found while building
+
+- **`prefer` could not introduce a tag.** Splunk reports no NetIncomeLoss, and
+  its override was inert because the join only considered globally listed tags.
+  Now a prefer override adds a company scoped rule.
+- **A component mapped as a total.** Intuit's cost of revenue came out as
+  677,000,000 (services only) instead of 797,000,000, overstating derived gross
+  profit by 120 million. Caught by the derived rows, then fixed by component
+  summation.
+- **`join ... using (period_start)` dropped every balance sheet fact**, because
+  `null = null` is false in SQL and instants have no period start. 4,450 rows
+  vanished silently; `is not distinct from` fixes it.
+- **Deriving per filing produced statements that did not add up.** Intuit's 2017
+  gross profit was computed inside an older filing while revenue came from a
+  newer one. Derivation moved after resolution.
+- **The balance sheet needs temporary equity.** Without it 72 periods did not
+  balance; Klaviyo's 2022 gap closed to exactly zero once added.
+- **Total equity must include noncontrolling interests.** GitLab's gap equalled
+  MinorityInterest exactly.
+- **A verification that failed and stopped a feature.** Deriving Intuit's cost of
+  revenue as CostsAndExpenses minus its three named expense tags was tested
+  against ten known years and overshot in every one, by up to 55 percent. The
+  feature was abandoned rather than shipped at low confidence.
+- **The consistency tests were proved by injection.** Pointing Adobe's revenue at
+  the services component took failures from 1 to 129, with Adobe 108 percent out.
+  A test that has never failed is a hypothesis.
+
+### 10.9 Coverage report and worklist
+
+`mart_mapping_coverage` is a grid of company, concept and fiscal year with a
+status of reported, derived, ambiguous, no_balance_sheet or missing. Instants are
+matched to the fiscal year whose end date they fall on, because an instant three
+months after a January year end belongs to the following year.
+
+`mart_unmapped_tags` lists tags a company reports that match no rule, with how
+many peers use each. It found both remaining mapping gaps without anyone reading
+a filing: `EarningsPerShareBasicAndDiluted` (14 companies) and
+`WeightedAverageNumberOfShareOutstandingBasicAndDiluted` (18 companies), which
+loss making companies use because basic and diluted are then equal. Adding two
+config lines closed 127 missing cells.
+
+## 11. Open decisions for later phases
 
 Phase 3 (mapping)
 - Initial canonical concept list (about 15).
@@ -496,12 +692,24 @@ Phase 3 (mapping)
 
 Phase 4 (custom tags)
 - Which quarters of Financial Statement Data Sets to pull and how to filter.
+- The Data Sets also carry dimensional facts, which companyfacts drops. That is
+  the only route to Workday's cost of revenue and Intuit's post 2018 expense
+  detail, 53 of the 62 remaining coverage gaps.
 
 Phase 5 (marts)
 - Fiscal year versus calendar year alignment for cross company comparison.
 - Deriving Q4 as full year minus nine month year to date.
 - Surfacing latest filed and originally reported values side by side, per the
   decision in section 8.6.
+- **Statement coherence.** Resolving each concept independently by latest filed
+  date means one statement can mix filings. Salesforce at 2017-01-31 takes assets
+  and liabilities from the 2018 10-K and equity from the 2020 one, because the
+  ASC 606 adoption adjusted opening equity without restating the prior balance
+  sheet. 26 periods across 10 companies do not balance for this reason, and the
+  consistency test warns on them. The options are per concept latest filed (today),
+  statement level resolution from a single filing, or publishing both views. The
+  choice depends on what the mart is for, so it belongs with the marts. Nothing is
+  lost either way: int_facts_mapped keeps every filing's version.
 
 Phase 6 (linkbase)
 - Which filings to parse (for example latest 10-K per company).
