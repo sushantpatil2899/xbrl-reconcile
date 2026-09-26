@@ -23,6 +23,7 @@ EXPECTED_CONCEPTS = {
     "operating_cash_flow",
     "investing_cash_flow",
     "financing_cash_flow",
+    "temporary_equity",
 }
 UNITS = {"USD", "USD/shares", "shares"}
 

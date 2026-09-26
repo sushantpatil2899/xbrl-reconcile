@@ -24,6 +24,11 @@ vars:
   # the same figure reported again. Also a fraction.
   restatement_tolerance: 0.001
 
+  # How far a financial statement identity may be out before it is worth
+  # reporting. Looser than the others: companies round to thousands and real
+  # statements carry small reconciling items.
+  consistency_tolerance: 0.01
+
 models:
   xbrl_reconcile:
     staging:

@@ -111,10 +111,25 @@ concepts:
   total_equity:
     statement: balance_sheet
     unit: USD
+    # Total equity means all equity, including the part belonging to
+    # noncontrolling interests, because that is what balances against total
+    # assets. GitLab's JiHu joint venture is 45 million of its equity, and
+    # picking the parent only tag left the balance sheet short by exactly that.
     tags:
-      - { tag: "us-gaap:StockholdersEquity", confidence: high }
-      - { tag: "us-gaap:StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest", confidence: medium, note: "Includes noncontrolling interests" }
+      - { tag: "us-gaap:StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest", confidence: high }
+      - { tag: "us-gaap:StockholdersEquity", confidence: high, note: "Parent only, which equals total equity when there is no noncontrolling interest" }
       - { tag: "ifrs-full:Equity", confidence: medium }
+
+  # Redeemable convertible preferred stock sits between liabilities and equity,
+  # because it is neither: it can be redeemed, so it is not permanent capital.
+  # Pre IPO companies carry large amounts of it, which is why their equity looks
+  # deeply negative. Without this concept the balance sheet does not balance.
+  temporary_equity:
+    statement: balance_sheet
+    unit: USD
+    tags:
+      - { tag: "us-gaap:TemporaryEquityCarryingAmountAttributableToParent", confidence: high }
+      - { tag: "us-gaap:TemporaryEquityCarryingAmountIncludingPortionAttributableToNoncontrollingInterests", confidence: medium, note: "Includes noncontrolling interests" }
 
   cash:
     statement: balance_sheet
