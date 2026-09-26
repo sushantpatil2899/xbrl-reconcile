@@ -1,0 +1,36 @@
+name: ingest-datasets
+
+# SEC publishes a Financial Statement Data Set about six weeks after each quarter
+# ends, so there is nothing to do most days. Monthly is enough, and the run is
+# idempotent: a quarter already landed for the configured companies is skipped.
+on:
+  schedule:
+    - cron: "0 7 5 * *"
+  workflow_dispatch:
+    inputs:
+      max_quarters:
+        description: How many quarters to land in this run
+        required: false
+        default: "8"
+
+concurrency:
+  group: ingest-datasets
+  cancel-in-progress: false
+
+jobs:
+  ingest-datasets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      STORAGE_BACKEND: b2
+      SEC_CONTACT_EMAIL: ${{ secrets.SEC_CONTACT_EMAIL }}
+      B2_INGEST_KEY_ID: ${{ secrets.B2_INGEST_KEY_ID }}
+      B2_INGEST_KEY: ${{ secrets.B2_INGEST_KEY }}
+      B2_BUCKET: ${{ vars.B2_BUCKET }}
+      B2_ENDPOINT: ${{ vars.B2_ENDPOINT }}
+      MAX_QUARTERS: ${{ inputs.max_quarters || '8' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.1.0
+      - run: uv sync --locked --no-dev
+      - run: uv run xbrl-ingest-datasets
