@@ -24,6 +24,11 @@ import zipfile
 DATASET_ROOT = "https://www.sec.gov/files/dera/data/financial-statement-data-sets"
 FSDS_PREFIX = "raw/fsds"
 
+# SEC's first published set. Asking for anything earlier returns 404 forever, so
+# candidates are floored here rather than reported as not published yet on every
+# run.
+EARLIEST_QUARTER = "2009q2"
+
 # The order here is the order the passes must run in.
 DATASET_FILES = ("sub", "num", "pre", "tag")
 
@@ -40,7 +45,9 @@ def quarter_key(quarter: str, name: str) -> str:
 
 
 def quarters_between(first_year: int, last_year: int) -> list[str]:
-    return [f"{year}q{q}" for year in range(first_year, last_year + 1) for q in (1, 2, 3, 4)]
+    """Quarters in order, never earlier than SEC's first published set."""
+    quarters = [f"{year}q{q}" for year in range(first_year, last_year + 1) for q in (1, 2, 3, 4)]
+    return [q for q in quarters if q >= EARLIEST_QUARTER]
 
 
 def filter_quarter(zip_bytes: bytes, ciks: set[int]) -> dict[str, bytes]:

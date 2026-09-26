@@ -7,6 +7,7 @@ import pytest
 
 from xbrl_reconcile.ingest.datasets import (
     DATASET_FILES,
+    EARLIEST_QUARTER,
     dataset_url,
     filter_quarter,
     quarter_key,
@@ -158,3 +159,11 @@ def test_quarters_between_lists_quarters_in_order():
         "2026q3",
         "2026q4",
     ]
+
+
+def test_quarters_never_start_before_secs_first_published_set():
+    """2009q1 does not exist and never will, so it must not be a candidate."""
+    quarters = quarters_between(2008, 2010)
+    assert quarters[0] == EARLIEST_QUARTER == "2009q2"
+    assert "2009q1" not in quarters
+    assert "2008q4" not in quarters
