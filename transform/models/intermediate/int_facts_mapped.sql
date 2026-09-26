@@ -68,6 +68,9 @@ mappings as (
 
 ),
 
+{#- Only enabled companies reach the mapping layer. A disabled company keeps its
+    raw snapshots and its staging rows, so nothing is lost and re-enabling needs
+    no download, but its values stop being published. -#}
 facts as (
 
     select
@@ -85,6 +88,7 @@ facts as (
         f.form,
         f.filed_date
     from {{ ref('stg_sec_facts') }} f
+    join {{ ref('stg_companies') }} c on c.cik = f.cik and c.enabled
     where f.is_valid
 
 ),
