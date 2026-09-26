@@ -18,10 +18,23 @@
 
 {{ config(materialized='table') }}
 
+{#- Reported and derived rows are resolved together, so a derived value gets
+    the same restatement tracking and basis selection as a reported one. -#}
 with mapped as (
 
-    select *
+    select
+        cik, ticker, concept, statement, period_start, period_end, period_kind, unit, value,
+        source_tag, confidence, cast(null as varchar) as inputs_confidence, basis,
+        accession, form, filed_date, candidate_count, candidates_disagree
     from {{ ref('int_facts_mapped') }}
+
+    union all
+
+    select
+        cik, ticker, concept, statement, period_start, period_end, period_kind, unit, value,
+        source_tag, confidence, inputs_confidence, basis,
+        accession, form, filed_date, 1 as candidate_count, false as candidates_disagree
+    from {{ ref('int_facts_derived') }}
 
 ),
 
@@ -101,6 +114,7 @@ select
     first_reported_value as originally_reported_value,
     source_tag,
     confidence,
+    inputs_confidence,
     basis,
     accession,
     form,

@@ -31,11 +31,14 @@ concepts:
   cost_of_revenue:
     statement: income_statement
     unit: USD
+    # CostOfServices and CostOfGoodsSold are deliberately absent: filers that use
+    # them report both as components of total cost, so either one alone
+    # understates the total. Intuit reports only these two (677 million services
+    # plus 120 million goods for 2017), so it has no cost of revenue until
+    # component summation exists.
     tags:
       - { tag: "us-gaap:CostOfRevenue", confidence: high }
       - { tag: "us-gaap:CostOfGoodsAndServicesSold", confidence: high }
-      - { tag: "us-gaap:CostOfServices", confidence: medium, note: "Services only; used before ASC 606 by some filers" }
-      - { tag: "us-gaap:CostOfGoodsSold", confidence: medium }
       - { tag: "ifrs-full:CostOfSales", confidence: medium }
 
   gross_profit:

@@ -1,0 +1,40 @@
+version: 2
+
+models:
+  - name: int_facts_derived
+    description: >
+      Concepts computed from accounting identities for companies that never
+      report them, one row per company, concept, period and filing. Every input
+      comes from the same filing, so the result is a number that filing could
+      have contained.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cik, concept, period_start, period_end, accession]
+    columns:
+      - name: cik
+        tests: [not_null]
+      - name: concept
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["gross_profit", "operating_expenses", "total_liabilities"]
+      - name: value
+        tests: [not_null]
+      - name: source_tag
+        description: The identity used, for example derived:revenue-cost_of_revenue.
+        tests: [not_null]
+      - name: confidence
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["derived"]
+      - name: inputs_confidence
+        description: The weakest confidence among the inputs.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["high", "medium", "low"]
