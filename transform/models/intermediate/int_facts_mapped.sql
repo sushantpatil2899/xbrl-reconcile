@@ -164,6 +164,81 @@ deduplicated as (
 
 ),
 
+{#- Filers that never tag a total report it as parts. Summing them is only
+    valid when every part is present and no total tag matched, so a reported
+    total always wins and a partial sum is never published. -#}
+component_sums as (
+
+    select
+        facts.cik,
+        facts.ticker,
+        components.concept,
+        components.statement,
+        facts.period_start,
+        facts.period_end,
+        case
+            when facts.period_type = 'instant' then 'instant'
+            when facts.period_days between 80 and 100 then 'quarter'
+            when facts.period_days between 170 and 190 then 'half'
+            when facts.period_days between 260 and 285 then 'nine_month'
+            when facts.period_days between 350 and 380 then 'annual'
+            else 'other'
+        end as period_kind,
+        facts.unit,
+        sum(facts.value) as value,
+        string_agg(facts.taxonomy || ':' || facts.sec_tag, '+' order by facts.sec_tag) as source_tag,
+        min(components.confidence) as configured_confidence,
+        case when facts.taxonomy = 'ifrs-full' then 'ifrs' else 'us_gaap' end as basis,
+        facts.accession,
+        facts.form,
+        facts.filed_date,
+        -- Component sums rank behind every total tag.
+        1000 + min(components.position) as effective_priority
+    from facts
+    join {{ ref('stg_tag_components') }} components
+        on facts.taxonomy = components.taxonomy
+        and facts.sec_tag = components.tag
+        and facts.unit = components.unit
+        and (
+            (components.statement = 'balance_sheet' and facts.period_type = 'instant')
+            or (components.statement != 'balance_sheet' and facts.period_type = 'duration')
+        )
+    group by
+        facts.cik, facts.ticker, components.concept, components.statement,
+        facts.period_start, facts.period_end, facts.period_type, facts.period_days,
+        facts.unit, facts.taxonomy, facts.accession, facts.form, facts.filed_date,
+        components.position, components.component_count
+    -- Every part must be present in this filing, or the sum understates the total.
+    having count(distinct facts.sec_tag) = min(components.component_count)
+
+),
+
+{#- A component sum is used only where no total tag matched for that company,
+    concept, period and filing. -#}
+usable_sums as (
+
+    select component_sums.*
+    from component_sums
+    where not exists (
+        select 1
+        from deduplicated totals
+        where totals.cik = component_sums.cik
+            and totals.concept = component_sums.concept
+            and totals.period_start is not distinct from component_sums.period_start
+            and totals.period_end = component_sums.period_end
+            and totals.accession = component_sums.accession
+    )
+
+),
+
+all_candidates as (
+
+    select * from deduplicated
+    union all
+    select * from usable_sums
+
+),
+
 ranked as (
 
     select
@@ -185,7 +260,7 @@ ranked as (
             partition by cik, concept, period_start, period_end, accession
             order by effective_priority, source_tag
         ) as runner_up_value
-    from deduplicated
+    from all_candidates
 
 )
 

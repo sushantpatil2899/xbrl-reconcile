@@ -278,6 +278,10 @@ def test_mapping_snapshots_record_concepts_and_overrides(tmp_path):
     )
     assert overrides[0]["mode"] == "ignore"
     assert overrides[0]["tag"] == "SalesRevenueServicesNet"
+    # Component sets are snapshotted too, even when empty for this config.
+    assert (
+        json.loads(storage.read(config_snapshot_key("tag_components", "2026-09-16T061502Z"))) == []
+    )
 
 
 def test_mapping_snapshots_are_skipped_when_no_mappings_are_given(tmp_path):

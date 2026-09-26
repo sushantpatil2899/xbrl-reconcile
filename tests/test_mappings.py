@@ -2,6 +2,7 @@ import pytest
 
 from xbrl_reconcile.config import Company
 from xbrl_reconcile.mappings import (
+    ComponentSet,
     ConfigError,
     TagMapping,
     load_mappings,
@@ -272,3 +273,89 @@ def test_override_with_unknown_confidence_is_rejected():
     overrides = [{"cik": 1, "concept": "revenue", "prefer": ["us-gaap:X"], "confidence": "certain"}]
     with pytest.raises(ConfigError, match="certain"):
         parse_mappings(make_config(overrides=overrides))
+
+
+COMPONENTS = [
+    {
+        "tags": ["us-gaap:CostOfServices", "us-gaap:CostOfGoodsSold"],
+        "confidence": "medium",
+        "note": "Filers without a total tag report these two parts",
+    }
+]
+
+
+def test_component_set_is_parsed():
+    concepts = {"revenue": {**REVENUE, "components": COMPONENTS}}
+    [component] = parse_mappings(make_config(concepts)).concepts["revenue"].components
+    assert component == ComponentSet(
+        concept="revenue",
+        taxonomy="us-gaap",
+        tags=("CostOfServices", "CostOfGoodsSold"),
+        position=10,
+        confidence="medium",
+        note="Filers without a total tag report these two parts",
+    )
+
+
+def test_component_confidence_defaults_to_medium():
+    components = [{"tags": ["us-gaap:A", "us-gaap:B"]}]
+    [component] = (
+        parse_mappings(make_config({"revenue": {**REVENUE, "components": components}}))
+        .concepts["revenue"]
+        .components
+    )
+    assert component.confidence == "medium"
+
+
+def test_component_set_cannot_be_high_confidence():
+    """A sum we assembled is a weaker claim than a total the company reported."""
+    components = [{"tags": ["us-gaap:A", "us-gaap:B"], "confidence": "high"}]
+    with pytest.raises(ConfigError, match="high"):
+        parse_mappings(make_config({"revenue": {**REVENUE, "components": components}}))
+
+
+def test_component_set_needs_at_least_two_tags():
+    components = [{"tags": ["us-gaap:A"]}]
+    with pytest.raises(ConfigError, match="at least two"):
+        parse_mappings(make_config({"revenue": {**REVENUE, "components": components}}))
+
+
+def test_component_tags_must_share_a_taxonomy():
+    components = [{"tags": ["us-gaap:A", "ifrs-full:B"]}]
+    with pytest.raises(ConfigError, match="taxonomy"):
+        parse_mappings(make_config({"revenue": {**REVENUE, "components": components}}))
+
+
+def test_a_tag_cannot_be_both_a_total_and_a_component():
+    components = [{"tags": ["us-gaap:Revenues", "us-gaap:Other"]}]
+    with pytest.raises(ConfigError, match="us-gaap:Revenues"):
+        parse_mappings(make_config({"revenue": {**REVENUE, "components": components}}))
+
+
+def test_component_rows_are_flat_for_sql():
+    concepts = {"revenue": {**REVENUE, "components": COMPONENTS}}
+    rows = parse_mappings(make_config(concepts)).component_rows()
+    assert rows == [
+        {
+            "concept": "revenue",
+            "statement": "income_statement",
+            "unit": "USD",
+            "taxonomy": "us-gaap",
+            "tag": "CostOfServices",
+            "position": 10,
+            "component_count": 2,
+            "confidence": "medium",
+            "note": "Filers without a total tag report these two parts",
+        },
+        {
+            "concept": "revenue",
+            "statement": "income_statement",
+            "unit": "USD",
+            "taxonomy": "us-gaap",
+            "tag": "CostOfGoodsSold",
+            "position": 10,
+            "component_count": 2,
+            "confidence": "medium",
+            "note": "Filers without a total tag report these two parts",
+        },
+    ]

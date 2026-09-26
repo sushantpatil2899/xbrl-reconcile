@@ -15,7 +15,8 @@ from xbrl_reconcile.config import Company, ConfigError
 CONFIDENCE_LEVELS = {"high", "medium", "low"}
 STATEMENTS = {"income_statement", "balance_sheet", "cash_flow"}
 
-CONCEPT_KEYS = {"statement", "unit", "tags"}
+CONCEPT_KEYS = {"statement", "unit", "tags", "components"}
+COMPONENT_KEYS = {"tags", "confidence", "note"}
 TAG_KEYS = {"tag", "confidence", "note"}
 OVERRIDE_KEYS = {
     "cik",
@@ -27,6 +28,11 @@ OVERRIDE_KEYS = {
     "through_year",
     "note",
 }
+
+# A sum we assembled from parts is a weaker claim than a total the company
+# reported itself, so a component set can never be high confidence.
+COMPONENT_CONFIDENCE_LEVELS = {"medium", "low"}
+DEFAULT_COMPONENT_CONFIDENCE = "medium"
 
 # A tag used for one company on our judgement is a weaker claim than a sector
 # wide standard tag, so an override that introduces a tag defaults to low.
@@ -50,11 +56,24 @@ class TagMapping:
 
 
 @dataclass(frozen=True)
+class ComponentSet:
+    """Tags that sum to a concept, for filers that never report the total."""
+
+    concept: str
+    taxonomy: str
+    tags: tuple[str, ...]
+    position: int
+    confidence: str
+    note: str = ""
+
+
+@dataclass(frozen=True)
 class ConceptSpec:
     name: str
     statement: str
     unit: str
     tags: tuple[TagMapping, ...] = ()
+    components: tuple[ComponentSet, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -89,6 +108,25 @@ class MappingConfig:
             }
             for concept in self.concepts.values()
             for mapping in concept.tags
+        ]
+
+    def component_rows(self) -> list[dict]:
+        """One row per component set and tag, so SQL can group and sum them."""
+        return [
+            {
+                "concept": concept.name,
+                "statement": concept.statement,
+                "unit": concept.unit,
+                "taxonomy": component.taxonomy,
+                "tag": tag,
+                "position": component.position,
+                "component_count": len(component.tags),
+                "confidence": component.confidence,
+                "note": component.note,
+            }
+            for concept in self.concepts.values()
+            for component in concept.components
+            for tag in component.tags
         ]
 
     def override_rows(self) -> list[dict]:
@@ -172,7 +210,7 @@ def _parse_concept(name: str, raw: dict) -> ConceptSpec:
     if not isinstance(raw, dict):
         raise ConfigError(f"concept {name} must be a mapping")
     _reject_unknown(set(raw), CONCEPT_KEYS, f"concept {name}")
-    missing = CONCEPT_KEYS - set(raw)
+    missing = {"statement", "unit", "tags"} - set(raw)
     if missing:
         raise ConfigError(f"concept {name} missing keys: {sorted(missing)}")
     if raw["statement"] not in STATEMENTS:
@@ -194,8 +232,57 @@ def _parse_concept(name: str, raw: dict) -> ConceptSpec:
         seen.add(mapping.qualified_tag)
         tags.append(mapping)
 
+    total_tags = {mapping.qualified_tag for mapping in tags}
+    components = tuple(
+        _parse_component(name, raw_component, position * PRIORITY_STEP, total_tags)
+        for position, raw_component in enumerate(raw.get("components") or [], start=1)
+    )
+
     return ConceptSpec(
-        name=name, statement=raw["statement"], unit=str(raw["unit"]), tags=tuple(tags)
+        name=name,
+        statement=raw["statement"],
+        unit=str(raw["unit"]),
+        tags=tuple(tags),
+        components=components,
+    )
+
+
+def _parse_component(concept: str, raw: dict, position: int, total_tags: set[str]) -> ComponentSet:
+    if not isinstance(raw, dict):
+        raise ConfigError(f"concept {concept}: each component set must be a mapping")
+    label = f"concept {concept} component set"
+    _reject_unknown(set(raw), COMPONENT_KEYS, label)
+
+    qualified = tuple(str(t) for t in raw.get("tags") or ())
+    if len(qualified) < 2:
+        # A single tag is a total, which belongs in `tags`. A partial sum would
+        # understate the concept, which is the error this feature exists to fix.
+        raise ConfigError(f"{label}: needs at least two tags")
+
+    taxonomies, tags = set(), []
+    for entry in qualified:
+        taxonomy, tag = _split_qualified_tag(entry, label)
+        taxonomies.add(taxonomy)
+        tags.append(tag)
+        if entry in total_tags:
+            raise ConfigError(f"{label}: {entry} is already a total tag for this concept")
+    if len(taxonomies) > 1:
+        raise ConfigError(f"{label}: all tags must share one taxonomy, got {sorted(taxonomies)}")
+
+    confidence = str(raw.get("confidence", DEFAULT_COMPONENT_CONFIDENCE))
+    if confidence not in COMPONENT_CONFIDENCE_LEVELS:
+        raise ConfigError(
+            f"{label}: confidence '{confidence}' is not allowed; a sum assembled from "
+            f"parts must be one of {sorted(COMPONENT_CONFIDENCE_LEVELS)}"
+        )
+
+    return ComponentSet(
+        concept=concept,
+        taxonomy=taxonomies.pop(),
+        tags=tuple(tags),
+        position=position,
+        confidence=confidence,
+        note=str(raw.get("note", "")),
     )
 
 

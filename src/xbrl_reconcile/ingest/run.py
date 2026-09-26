@@ -152,6 +152,7 @@ def _write_mapping_snapshots(mappings: MappingConfig, storage, run_ts: str) -> N
     for name, rows in (
         ("tag_mappings", mappings.concept_rows()),
         ("tag_mapping_overrides", mappings.override_rows()),
+        ("tag_components", mappings.component_rows()),
     ):
         storage.write(config_snapshot_key(name, run_ts), json.dumps(rows, indent=2).encode())
 

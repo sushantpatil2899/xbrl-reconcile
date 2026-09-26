@@ -31,15 +31,17 @@ concepts:
   cost_of_revenue:
     statement: income_statement
     unit: USD
-    # CostOfServices and CostOfGoodsSold are deliberately absent: filers that use
-    # them report both as components of total cost, so either one alone
-    # understates the total. Intuit reports only these two (677 million services
-    # plus 120 million goods for 2017), so it has no cost of revenue until
-    # component summation exists.
     tags:
       - { tag: "us-gaap:CostOfRevenue", confidence: high }
       - { tag: "us-gaap:CostOfGoodsAndServicesSold", confidence: high }
       - { tag: "ifrs-full:CostOfSales", confidence: medium }
+    # Filers without a total tag report cost of revenue as two parts. Intuit
+    # reported 677 million of services plus 120 million of goods for 2017 and
+    # never tagged the 797 million total, so either part alone understates it.
+    # Used only when no tag above matched, and only when both parts are present.
+    components:
+      - tags: ["us-gaap:CostOfServices", "us-gaap:CostOfGoodsSold"]
+        confidence: medium
 
   gross_profit:
     statement: income_statement
