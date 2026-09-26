@@ -26,6 +26,10 @@ Measured across the 28 companies in this project:
   their moment.
 - **113,249** of **226,028** company facts are reported by more than one
   filing, so any naive query returns duplicates.
+- **A third of the facts are invisible in SEC's JSON API.** Workday never tags a
+  total cost of revenue; it reports the figure split by product line, and that API
+  drops every dimensional fact. Recovering them needs SEC's quarterly Financial
+  Statement Data Sets, where 131,908 of 395,773 facts carry a dimension.
 
 A query for "revenue" that assumes one tag silently returns nothing for
 CrowdStrike, and silently returns the wrong year's version for Salesforce.
@@ -39,13 +43,15 @@ Resolving that is what this project does.
 | 1. Ingestion | Built | Daily pull of SEC companyfacts and submissions into object storage |
 | 2. Staging | Built | Flattens nested JSON into one row per fact, tested and published |
 | 3. Mapping | Planned | Map raw tags to canonical concepts with confidence levels |
-| 4. Custom tags | Planned | Company specific tags from SEC Financial Statement Data Sets |
+| 4. Data Sets | Built | Dimensional facts and custom tags from SEC's quarterly Data Sets |
 | 5. Marts | Planned | Comparable income statement, balance sheet, cash flow |
 | 6. Linkbase | Planned | Parse filing calculation linkbases to back high confidence mappings |
 | 7. API | Planned | FastAPI over the marts |
 
-Running today: two scheduled workflows, 23 dbt tests, 60 Python tests, 408,213
-facts in staging, at zero infrastructure cost.
+Running today: three scheduled workflows, 174 dbt tests, 132 Python tests,
+408,213 facts from the JSON API plus 395,773 from the quarterly Data Sets, 16
+canonical concepts with a confidence level on every value, at zero infrastructure
+cost.
 
 ## Architecture
 
@@ -82,6 +88,9 @@ everything else:
   pipeline; one company's odd data is quarantined and the other 27 publish.
 - **Staleness is measured on a heartbeat**, not on data age, because companies
   file about four times a year and a quiet fortnight is normal.
+- **A computed value is never dressed up as a reported one.** Totals recovered by
+  summing a company's own components carry their own confidence level, and the
+  identity used is recorded alongside the number.
 
 ## Running it
 

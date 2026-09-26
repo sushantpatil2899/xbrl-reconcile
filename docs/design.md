@@ -1,7 +1,7 @@
 # xbrl-reconcile: Design
 
-Status: Phases 0, 1, 2 and 3 built. Later phases list open decisions only.
-Last updated: 2026-09-25
+Status: Phases 0 to 4 built. Later phases list open decisions only.
+Last updated: 2026-09-26
 
 ## 1. Goal
 
@@ -59,7 +59,7 @@ Verified against SEC data on 2026-09-16.
 | 1 | Ingestion | Done. companyfacts and submissions landed raw in Backblaze B2 daily; infra in Terraform |
 | 2 | dbt staging | Done. One row per fact, incremental, tested, published to B2 |
 | 3 | Mapping and intermediate | Done. 16 canonical concepts, confidence on every value, coverage report |
-| 4 | Custom tags | SEC Financial Statement Data Sets filtered to our companies |
+| 4 | Data Sets | Done. Dimensional facts and custom tags from SEC's quarterly Data Sets |
 | 5 | Marts and tests | Income statement, balance sheet, cash flow, confidence report |
 | 6 | Linkbase verification | Parse calculation linkbase to back high confidence mappings |
 | 7 | API | FastAPI over the marts |
@@ -683,18 +683,175 @@ a filing: `EarningsPerShareBasicAndDiluted` (14 companies) and
 loss making companies use because basic and diluted are then equal. Adding two
 config lines closed 127 missing cells.
 
-## 11. Open decisions for later phases
+## 11. Phase 4 as built: the Financial Statement Data Sets
+
+Built 2026-09-26. Recovers the facts `companyfacts` throws away: values reported
+only as a breakdown by dimension, and company specific custom tags.
+
+### 11.1 Why the phase exists
+
+The design called this phase "custom tags". Measured, the proportions are the
+other way round: **one third of all facts in our companies' filings are
+dimensional** (131,908 of 395,773 across 69 quarters), and SEC's JSON API drops
+every one of them.
+
+Workday never tags total cost of revenue. It reports
+`CostOfGoodsAndServicesSold` split as `SubscriptionServices` plus
+`ProfessionalServices`, so `companyfacts` shows nothing and 26 coverage cells
+were empty. In its fiscal 2017 10-K the same concept was a **custom** tag,
+`CostOfRevenueSubscriptionAndSupport`, so both mechanisms are needed: custom tags
+for the older years, dimensions for the recent ones.
+
+### 11.2 The source
+
+| Fact | Value |
+|---|---|
+| URL | `https://www.sec.gov/files/dera/data/financial-statement-data-sets/YYYYqN.zip` |
+| Available | 2009q2 to 2026q2, 69 published quarters |
+| Zip size | 58 to 85 MB per quarter, 4.2 GB in total |
+| Files | `sub.txt` filings, `num.txt` facts, `tag.txt` definitions, `pre.txt` statement lines |
+| `num.txt` | 3.6 million rows, 600 MB uncompressed, for one quarter |
+| Our share | about 8,800 rows a quarter |
+| Stored after filtering | **9.8 MB for seventeen years** |
+
+`num.txt` columns: `adsh, tag, version, ddate, qtrs, uom, segments, coreg, value,
+footnote`. `qtrs` encodes duration (0 instant, 1 quarter, 2 half, 3 nine months,
+4 annual), `segments` holds dimensions as `Axis=Member;`, and `version` for a
+custom tag is the accession number of the filing that declared it.
+
+The header is byte identical in 2009q2, 2017q1 and 2026q2, so the format has held
+for seventeen years. Files are still parsed by header name rather than column
+position.
+
+### 11.3 Ingestion
+
+```
+raw/fsds/<quarter>/{sub,num,pre,tag}.tsv.gz
+raw/fsds/<quarter>/_filtered_for.json      which CIKs the quarter was filtered for
+raw/fsds/_state/quarters.json              the index of landed quarters
+```
+
+Decisions:
+
+- **Filter before storing.** 70 quarters of raw zips would be 4.2 GB of a 10 GB
+  free tier, 99.7 percent of it other companies. Filtering is by company only and
+  the surviving rows are the bytes SEC published, so the raw layer stays faithful.
+- **Byte level matching, never decoding.** Company names in `sub.txt` contain
+  bytes that are not valid UTF-8; a decode and re-encode round trip would alter
+  them.
+- **Four passes in order**, because only `sub.txt` maps a filing to a company:
+  read `sub`, then filter `num` and `pre` by the filings found, then filter `tag`
+  to the definitions those facts used.
+- **The quarter is the version.** SEC never revises a published quarter, so
+  files are not timestamped and a landed quarter is never re-fetched.
+- **Quarter selection comes from the company config.** A quarter is needed by a
+  company when it is enabled and the quarter's year falls between its
+  `start_year` and its `end_year` plus one. The plus one is because a final
+  fiscal year is reported in a filing submitted the following calendar year.
+- **Each quarter records the CIKs it was filtered for**, and a quarter is fetched
+  when the CIKs it should cover are not already a subset of what it recorded. So
+  adding a company re-fetches only the quarters its own range covers, removing one
+  re-fetches nothing, and there is no second setting to disagree with the first.
+- **A 404 means not published yet**, not a failure: a quarter appears about six
+  weeks after it ends. Candidates are floored at 2009q2, SEC's first set, so a
+  quarter that will never exist is never requested.
+- **Batches.** A backfill runs in chunks (default 8 quarters, workflow input to
+  override) rather than one long job. The full 69 quarter backfill took 8 minutes.
+
+### 11.4 Recovering a total by summing one dimension
+
+`int_fsds_dimension_totals` sums the members of one axis where a company reports
+no total. Six safeguards, because summing parts is where double counting hides:
+
+1. Only axes listed in config (`summable_axes`), because whether an axis
+   partitions a total is a judgement about the axis. `ProductOrService` is the
+   only entry.
+2. Only facts with exactly one dimension. A fact split by product and by
+   geography at once would be counted twice.
+3. At least two members; one member is not a breakdown.
+4. No consolidated row for the same tag, period and unit in any filing.
+5. **Nothing already reported for the concept that tag maps to, under any tag.**
+   Autodesk taught this: it reports `CostOfRevenue` as a consolidated total (650
+   million for fiscal 2026) and `CostOfGoodsAndServicesSold` as a two member
+   breakdown summing to 553 million, which is part of cost of revenue rather than
+   all of it. Guarding at tag level alone published a total 15 percent short.
+6. Within one filing, one period end, one period kind and one unit.
+
+Recovered totals enter `int_facts_mapped` as a third candidate source at priority
+2000, behind every reported total and every component sum, with `source_tag`
+recorded as `fsds:<taxonomy>:<Tag>@<Axis>` and confidence capped at medium.
+
+**Period alignment.** The Data Sets give a period end and a length but no start
+date, while the business key uses `period_start`. A recovered value takes the
+start date the company already uses for that period end and length, falling back
+to arithmetic only for a period no other concept covers. Every recovered row in
+the current data matched, which is what lets a recovered value line up with the
+rest of its statement.
+
+**The check that matters.** Workday's recovered cost of revenue gives a gross
+margin of 75.7, 75.5 and 75.6 percent for fiscal 2026, 2025 and 2024. A wrong
+total would wander; a stable mid seventies margin is what Workday reports.
+
+### 11.5 Optional concepts
+
+Coverage counted 230 cells as missing that were `temporary_equity` for companies
+with no redeemable preferred stock. Absence there is an answer, not a gap, and
+nothing in the facts distinguishes "has none" from "not mapped". So a concept can
+declare `optional: true` and its absence becomes the status `not_applicable`.
+Only `temporary_equity` carries the flag, and a test enforces that.
+
+### 11.6 Results
+
+| Metric | Value |
+|---|---|
+| Quarters landed | 69 |
+| Filings | 1,029 |
+| Facts | 395,773 |
+| Dimensional facts | 131,908, one third of the total |
+| Custom tag facts | 21,876 across 192 distinct tags |
+| Coverage: reported | 4,645 cells |
+| Coverage: derived | 67 |
+| Coverage: **missing** | **18**, from 56 before the phase |
+| dbt tests | 174 |
+| Python tests | 132 |
+
+Gaps closed: Intuit's operating expenses from 9 missing years to 1, Workday's
+cost of revenue from 13 to a handful, gross profit from 19 cells to 4. The
+remaining 18 are single year edges.
+
+`mart_custom_tags` surfaces what companies invented, with how many peers invented
+the same name. Six companies independently created a tag for the same capitalized
+contract cost movement, and two of them differ only by a plural, which is the
+project's premise in one row. None of them is one of the 16 concepts, so nothing
+is mapped from them yet.
+
+### 11.7 Traps found while building
+
+- **A guard at the wrong level.** Autodesk's case above: the fix was to guard at
+  concept level rather than tag level.
+- **A company blind file list.** `stg_sec_facts` globbed `cik=*` rather than
+  reading the config, so a removed company's snapshots were still read and
+  quarantined, warning on every run forever. Staging now reads configured
+  companies only.
+- **`enabled: false` did nothing downstream.** Phase 2 claimed models filtered on
+  it; none did. `int_facts_mapped` now joins enabled companies only, while staging
+  keeps disabled ones so re-enabling needs no download.
+- **A candidate list that chased a quarter that never existed.** 2009q1 is before
+  SEC's first set, so it 404ed on every run and was reported as not published yet.
+- **Adding a config snapshot type is order dependent.** The first production
+  transform after this phase failed, because `stg_tag_summable_axes` read a
+  snapshot that ingestion had not yet written. Ingestion writes config snapshots,
+  so a new snapshot type needs an ingest run before the next transform. Normal
+  operation chains them correctly; only a manual transform first breaks.
+
+## 12. Open decisions for later phases
 
 Phase 3 (mapping)
 - Initial canonical concept list (about 15).
 - Tag mapping file format (YAML with generated dbt seed, or CSV seed directly).
 - Priority when a company reports several candidate tags for the same period.
 
-Phase 4 (custom tags)
-- Which quarters of Financial Statement Data Sets to pull and how to filter.
-- The Data Sets also carry dimensional facts, which companyfacts drops. That is
-  the only route to Workday's cost of revenue and Intuit's post 2018 expense
-  detail, 53 of the 62 remaining coverage gaps.
+Phase 4 (Data Sets): built, see section 11.
 
 Phase 5 (marts)
 - Fiscal year versus calendar year alignment for cross company comparison.
