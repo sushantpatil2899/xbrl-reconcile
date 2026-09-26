@@ -80,6 +80,7 @@ concepts:
     unit: USD/shares
     tags:
       - { tag: "us-gaap:EarningsPerShareDiluted", confidence: high }
+      - { tag: "us-gaap:EarningsPerShareBasicAndDiluted", confidence: medium, note: "Used when basic and diluted are equal, which happens in loss making periods" }
       - { tag: "ifrs-full:DilutedEarningsLossPerShare", confidence: medium }
 
   shares_diluted:
@@ -87,6 +88,7 @@ concepts:
     unit: shares
     tags:
       - { tag: "us-gaap:WeightedAverageNumberOfDilutedSharesOutstanding", confidence: high }
+      - { tag: "us-gaap:WeightedAverageNumberOfShareOutstandingBasicAndDiluted", confidence: medium, note: "Combined count, used when basic and diluted are equal. Note the singular Share in the tag name" }
       - { tag: "ifrs-full:AdjustedWeightedAverageShares", confidence: medium }
 
   total_assets:

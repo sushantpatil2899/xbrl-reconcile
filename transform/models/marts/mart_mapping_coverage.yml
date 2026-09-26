@@ -20,12 +20,15 @@ models:
         description: >
           reported when the company tagged it, derived when computed from other
           concepts, ambiguous when candidate tags disagreed and we chose,
-          missing when there is nothing.
+          no_balance_sheet for a balance sheet concept in the company's earliest
+          fiscal year (US rules require three income statements but only two
+          balance sheets, so that gap can never be filled), missing when there is
+          nothing and something could be done about it.
         tests:
           - not_null
           - accepted_values:
               arguments:
-                values: ["reported", "derived", "ambiguous", "missing"]
+                values: ["reported", "derived", "ambiguous", "no_balance_sheet", "missing"]
 
   - name: mart_unmapped_tags
     description: >

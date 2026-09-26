@@ -86,6 +86,18 @@ year_facts as (
 
 ),
 
+{#- US rules require three years of income statements but only two balance
+    sheets, so a company's earliest fiscal year has no balance sheet anywhere in
+    the data. That gap can never be filled, so it is labelled rather than left in
+    the worklist as if it were actionable. -#}
+earliest_year as (
+
+    select cik, min(fiscal_year) as first_fiscal_year
+    from fiscal_years
+    group by all
+
+),
+
 {#- A shifting year end can put two periods in one fiscal year; keep the later. -#}
 one_per_year as (
 
@@ -106,6 +118,10 @@ select
     spine.concept,
     spine.statement,
     case
+        when facts.value is null
+            and spine.statement = 'balance_sheet'
+            and spine.fiscal_year = earliest_year.first_fiscal_year
+            then 'no_balance_sheet'
         when facts.value is null then 'missing'
         when facts.confidence = 'derived' then 'derived'
         when facts.candidates_disagree then 'ambiguous'
@@ -120,6 +136,7 @@ select
     facts.was_restated,
     facts.restatement_count
 from spine
+join earliest_year on earliest_year.cik = spine.cik
 left join one_per_year facts
     on facts.cik = spine.cik
     and facts.concept = spine.concept
