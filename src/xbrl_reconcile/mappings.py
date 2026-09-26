@@ -183,9 +183,7 @@ def load_mappings(path: Path) -> MappingConfig:
 def parse_mappings(data: dict) -> MappingConfig:
     if not isinstance(data, dict):
         raise ConfigError("mapping config must be a mapping with 'concepts'")
-    _reject_unknown(
-        set(data), {"concepts", "company_overrides", "summable_axes"}, "top level"
-    )
+    _reject_unknown(set(data), {"concepts", "company_overrides", "summable_axes"}, "top level")
 
     raw_concepts = data.get("concepts") or {}
     if not raw_concepts:
@@ -228,9 +226,7 @@ def _parse_summable_axis(raw: dict, index: int) -> SummableAxis:
             f"{label}: confidence '{confidence}' is not allowed; a total recovered by "
             f"summing members must be one of {sorted(COMPONENT_CONFIDENCE_LEVELS)}"
         )
-    return SummableAxis(
-        axis=str(raw["axis"]), confidence=confidence, note=str(raw.get("note", ""))
-    )
+    return SummableAxis(axis=str(raw["axis"]), confidence=confidence, note=str(raw.get("note", "")))
 
 
 def validate_against_companies(config: MappingConfig, companies: list[Company]) -> list[str]:

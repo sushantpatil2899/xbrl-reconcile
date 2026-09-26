@@ -376,9 +376,7 @@ def test_summable_axes_are_parsed():
 
 def test_a_summable_axis_cannot_be_high_confidence():
     with pytest.raises(ConfigError, match="high"):
-        parse_mappings(
-            {**make_config(), "summable_axes": [{"axis": "X", "confidence": "high"}]}
-        )
+        parse_mappings({**make_config(), "summable_axes": [{"axis": "X", "confidence": "high"}]})
 
 
 def test_a_summable_axis_needs_a_name():
