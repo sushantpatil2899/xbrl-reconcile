@@ -1,0 +1,76 @@
+version: 2
+
+models:
+  - name: mart_confidence_report
+    description: >
+      One row per statement, saying what it is made of rather than what it says:
+      how many lines are standard tags the company filed, how many were mapped from
+      a weaker tag, how many were computed, whether the statement is complete, and
+      whether its accounting identity closes.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cik, statement, period_kind, period_end]
+    columns:
+      - name: cik
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_companies')
+                field: cik
+      - name: ticker
+        tests: [not_null]
+      - name: statement
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["income_statement", "balance_sheet", "cash_flow"]
+      - name: period_end
+        tests: [not_null]
+      - name: lines_present
+        description: Every line published for this statement, optional ones included.
+        tests: [not_null]
+      - name: lines_expected
+        description: >
+          The lines that always apply. Optional concepts are excluded, so a company
+          with no redeemable preferred stock is not counted as missing a line.
+        tests: [not_null]
+      - name: is_complete
+        description: Whether every line that always applies is present.
+        tests: [not_null]
+      - name: low_lines
+        description: >
+          Zero everywhere today: nothing in the warehouse currently resolves to low
+          confidence. The column exists because config permits it and a company
+          override defaults to it.
+        tests: [not_null]
+      - name: ambiguous_lines
+        description: Lines where two candidate tags disagreed about the value.
+        tests: [not_null]
+      - name: incoherent_lines
+        description: >
+          Lines newer than the filing this statement was read from. Read alongside
+          identity_gap: together they separate a wrong mapping from lines that come
+          from different filings.
+        tests: [not_null]
+      - name: identity_gap
+        description: >
+          Assets less liabilities, temporary equity and equity for a balance sheet;
+          revenue less cost of revenue and gross profit for an income statement.
+          Null where the lines needed are absent, and for cash flow, which has no
+          identity in these concepts.
+      - name: identity_holds
+        description: Whether the gap is within the consistency tolerance. Null when unchecked.
+      - name: trust
+        description: >
+          check    an identity fails, or a line was ambiguous
+          mapped   contains a weaker tag: retired, another rulebook, or recovered
+          computed contains a value derived from an identity or adjacent periods
+          reported every line is a standard tag the company filed
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["reported", "computed", "mapped", "check"]
