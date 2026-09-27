@@ -1,0 +1,58 @@
+version: 2
+
+models:
+  - name: int_facts_quarterly
+    description: >
+      The fourth quarter, computed as the full year minus the nine month figure
+      for concepts whose periods can be subtracted. No company files a report
+      covering the final three months alone, so without this the fourth quarter is
+      missing for every company in every year.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cik, concept, period_start, period_end]
+    columns:
+      - name: cik
+        tests: [not_null]
+      - name: concept
+        description: Never a ratio or an average, and never a balance sheet concept.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_tag_mappings')
+                field: concept
+      - name: statement
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["income_statement", "cash_flow"]
+      - name: period_start
+        tests: [not_null]
+      - name: period_end
+        tests: [not_null]
+      - name: period_kind
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["quarter"]
+      - name: value
+        tests: [not_null]
+      - name: source_tag
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["derived:annual-nine_month"]
+      - name: confidence
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["derived"]
+      - name: inputs_confidence
+        description: The weaker of the two inputs, which is what the row is worth.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["high", "medium", "low"]

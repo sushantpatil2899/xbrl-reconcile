@@ -24,6 +24,11 @@ models:
           - accepted_values:
               arguments:
                 values: ["USD", "USD/shares", "shares"]
+      - name: is_additive
+        description: >
+          Whether the concept's periods can be added or subtracted. False for a
+          ratio or an average, which is why a quarter cannot be derived from one.
+        tests: [not_null]
       - name: taxonomy
         tests: [not_null]
       - name: tag

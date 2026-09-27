@@ -15,7 +15,7 @@ from xbrl_reconcile.config import Company, ConfigError
 CONFIDENCE_LEVELS = {"high", "medium", "low"}
 STATEMENTS = {"income_statement", "balance_sheet", "cash_flow"}
 
-CONCEPT_KEYS = {"statement", "unit", "tags", "components", "optional"}
+CONCEPT_KEYS = {"statement", "unit", "tags", "components", "optional", "additive"}
 COMPONENT_KEYS = {"tags", "confidence", "note"}
 SUMMABLE_AXIS_KEYS = {"axis", "confidence", "note"}
 TAG_KEYS = {"tag", "confidence", "note"}
@@ -79,6 +79,10 @@ class ConceptSpec:
     # answer rather than a gap. Declared rather than inferred: nothing in the
     # facts distinguishes "the company has none" from "we failed to map it".
     optional: bool = False
+    # False for a ratio or an average, whose periods cannot be added or
+    # subtracted. Earnings per share and a weighted average share count both look
+    # like ordinary numbers, so this cannot be inferred from the facts either.
+    additive: bool = True
 
 
 @dataclass(frozen=True)
@@ -116,6 +120,7 @@ class MappingConfig:
                 "statement": concept.statement,
                 "unit": concept.unit,
                 "is_optional": concept.optional,
+                "is_additive": concept.additive,
                 "taxonomy": mapping.taxonomy,
                 "tag": mapping.tag,
                 "priority": mapping.priority,
@@ -286,7 +291,8 @@ def _parse_concept(name: str, raw: dict) -> ConceptSpec:
         unit=str(raw["unit"]),
         tags=tuple(tags),
         components=components,
-        optional=bool(raw.get("optional", False)),
+        optional=_parse_flag(name, raw, "optional", default=False),
+        additive=_parse_flag(name, raw, "additive", default=True),
     )
 
 
@@ -407,6 +413,21 @@ def _split_qualified_tag(qualified: str, where: str) -> tuple[str, str]:
             f"{where}: tag '{qualified}' needs a taxonomy prefix, for example us-gaap:Revenues"
         )
     return taxonomy, tag
+
+
+def _parse_flag(name: str, raw: dict, key: str, default: bool) -> bool:
+    """A flag must be written as a real boolean.
+
+    `bool()` would accept anything, and a quoted "false" in YAML is a non empty
+    string, so it would read as true and silently mean the opposite of what the
+    config says.
+    """
+    if key not in raw:
+        return default
+    value = raw[key]
+    if not isinstance(value, bool):
+        raise ConfigError(f"concept {name}: {key} must be true or false, got {value!r}")
+    return value
 
 
 def _reject_unknown(keys: set, allowed: set, where: str) -> None:

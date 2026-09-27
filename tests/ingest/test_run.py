@@ -267,6 +267,7 @@ def test_mapping_snapshots_record_concepts_and_overrides(tmp_path):
             "statement": "income_statement",
             "unit": "USD",
             "is_optional": False,
+            "is_additive": True,
             "taxonomy": "us-gaap",
             "tag": "Revenues",
             "priority": 10,

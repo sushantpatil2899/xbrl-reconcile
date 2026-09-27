@@ -195,6 +195,7 @@ def test_rows_flatten_concepts_and_overrides_for_the_snapshot():
         "statement": "income_statement",
         "unit": "USD",
         "is_optional": False,
+        "is_additive": True,
         "taxonomy": "us-gaap",
         "tag": "RevenueFromContractWithCustomerExcludingAssessedTax",
         "priority": 10,
@@ -403,3 +404,33 @@ def test_optional_is_carried_into_the_snapshot_rows():
     concepts = {"revenue": {**REVENUE, "optional": True}}
     rows = parse_mappings(make_config(concepts)).concept_rows()
     assert all(row["is_optional"] for row in rows)
+
+
+def test_concepts_are_additive_unless_declared_otherwise():
+    """A sum can be split across periods; a ratio or an average cannot."""
+    concepts = {
+        "revenue": dict(REVENUE),
+        "eps_diluted": {
+            "statement": "income_statement",
+            "unit": "USD/shares",
+            "additive": False,
+            "tags": [{"tag": "us-gaap:EarningsPerShareDiluted", "confidence": "high"}],
+        },
+    }
+    config = parse_mappings(make_config(concepts))
+    assert config.concepts["revenue"].additive is True
+    assert config.concepts["eps_diluted"].additive is False
+
+
+def test_additive_is_carried_into_the_snapshot_rows():
+    concepts = {"revenue": {**REVENUE, "additive": False}}
+    rows = parse_mappings(make_config(concepts)).concept_rows()
+    assert not any(row["is_additive"] for row in rows)
+
+
+def test_a_flag_written_as_text_is_rejected_rather_than_read_as_true():
+    """A quoted "false" is a non empty string, so bool() would read it as true."""
+    for flag in ("additive", "optional"):
+        concepts = {"revenue": {**REVENUE, flag: "false"}}
+        with pytest.raises(ConfigError, match=f"{flag} must be true or false"):
+            parse_mappings(make_config(concepts))

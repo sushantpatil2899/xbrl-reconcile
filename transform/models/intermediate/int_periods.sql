@@ -38,6 +38,18 @@ with periods as (
         period_kind
     from {{ ref('int_facts') }}
 
+    union
+
+    -- A derived fourth quarter is a period no filing covers, so it is absent from
+    -- int_facts and would otherwise carry no label at all.
+    select distinct
+        cik,
+        ticker,
+        period_start,
+        period_end,
+        period_kind
+    from {{ ref('int_facts_quarterly') }}
+
 ),
 
 {#- Annual periods are what define a year end, so the fiscal calendar is read off

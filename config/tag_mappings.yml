@@ -16,6 +16,11 @@
 #
 # ifrs-full tags are ranked last because they follow different accounting
 # rules. Only Atlassian reports them, for periods ending 2016 to 2018.
+#
+# `additive: false` marks a concept whose periods cannot be added or subtracted,
+# which is how a ratio or an average differs from a sum. Concepts are additive
+# unless stated, so a new ratio concept must say so or a quarter derived from it
+# will be quietly wrong.
 
 concepts:
   revenue:
@@ -78,6 +83,10 @@ concepts:
   eps_diluted:
     statement: income_statement
     unit: USD/shares
+    # A ratio, so its periods cannot be added or subtracted: each figure has its
+    # own share count underneath it. A fourth quarter cannot be recovered by
+    # taking the nine month figure off the full year one.
+    additive: false
     tags:
       - { tag: "us-gaap:EarningsPerShareDiluted", confidence: high }
       - { tag: "us-gaap:EarningsPerShareBasicAndDiluted", confidence: medium, note: "Used when basic and diluted are equal, which happens in loss making periods" }
@@ -86,6 +95,9 @@ concepts:
   shares_diluted:
     statement: income_statement
     unit: shares
+    # A weighted average over the period, and subtracting one average from
+    # another is not an average of anything.
+    additive: false
     tags:
       - { tag: "us-gaap:WeightedAverageNumberOfDilutedSharesOutstanding", confidence: high }
       - { tag: "us-gaap:WeightedAverageNumberOfShareOutstandingBasicAndDiluted", confidence: medium, note: "Combined count, used when basic and diluted are equal. Note the singular Share in the tag name" }
