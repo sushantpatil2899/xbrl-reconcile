@@ -2,13 +2,21 @@ version: 2
 
 models:
   - name: stg_companies
-    description: Company config loaded from config/companies.yml through a seed.
+    description: >
+      Company config, read from the snapshot the ingestion run wrote to the
+      bucket, so config/companies.yml stays the only source of truth.
     columns:
       - name: cik
         description: SEC's permanent company identifier.
         tests: [unique, not_null]
       - name: ticker
         tests: [unique, not_null]
+      - name: report_types
+        description: >
+          Which forms count as a report for this company. SEC's companyfacts
+          response returns facts from every form ever filed, so the mapping layer
+          filters on this list rather than trusting what arrives.
+        tests: [not_null]
 
   - name: stg_sec_facts
     description: >

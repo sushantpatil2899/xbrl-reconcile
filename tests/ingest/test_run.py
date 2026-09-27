@@ -170,6 +170,7 @@ def test_config_snapshot_records_the_company_list(tmp_path):
             "start_year": 2009,
             "end_year": None,
             "enabled": True,
+            "report_types": ["10-K", "10-Q"],
         }
     ]
 

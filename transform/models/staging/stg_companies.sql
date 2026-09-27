@@ -11,6 +11,7 @@ select
     start_year,
     end_year,
     enabled,
+    report_types,
     filename as source_file
 from read_json(
     {{ newest_config_snapshot('companies') }},
@@ -23,7 +24,8 @@ from read_json(
         group_name: 'VARCHAR',
         start_year: 'INTEGER',
         end_year: 'INTEGER',
-        enabled: 'BOOLEAN'
+        enabled: 'BOOLEAN',
+        report_types: 'VARCHAR[]'
     },
     format = 'array',
     filename = true

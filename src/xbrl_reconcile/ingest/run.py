@@ -141,6 +141,10 @@ def _write_config_snapshot(companies: list[Company], storage, run_ts: str) -> No
             "start_year": c.start_year,
             "end_year": c.end_year,
             "enabled": c.enabled,
+            # Which forms count as a report. The transform layer needs this too:
+            # a companyfacts response carries facts from every form a company ever
+            # filed, not only the ones listed here.
+            "report_types": list(c.report_types),
         }
         for c in companies
     ]

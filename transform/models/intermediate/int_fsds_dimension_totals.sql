@@ -66,7 +66,11 @@ already_reported as (
         on rules.taxonomy = facts.taxonomy
         and rules.tag = facts.concept
         and rules.unit = facts.unit
+    -- A form whose values are not published cannot count as evidence that the
+    -- company reported a total either.
+    join {{ ref('stg_companies') }} companies on companies.cik = facts.cik
     where facts.is_valid
+        and {{ reported_in_a_configured_form('facts', 'companies') }}
 
 ),
 
@@ -92,7 +96,10 @@ dimensional as (
     from {{ ref('stg_fsds_facts') }} f
     join summable on summable.axis = f.axis
     join rules on rules.taxonomy = f.taxonomy and rules.tag = f.tag and rules.unit = f.unit
+    -- The Data Sets carry registration statements and earnings releases too.
+    join {{ ref('stg_companies') }} c on c.cik = f.cik
     where f.dimension_count = 1
+        and {{ reported_in_a_configured_form('f', 'c') }}
 
 ),
 
