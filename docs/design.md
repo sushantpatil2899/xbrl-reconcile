@@ -60,7 +60,7 @@ Verified against SEC data on 2026-09-16.
 | 2 | dbt staging | Done. One row per fact, incremental, tested, published to B2 |
 | 3 | Mapping and intermediate | Done. 16 canonical concepts, confidence on every value, coverage report |
 | 4 | Data Sets | Done. Dimensional facts and custom tags from SEC's quarterly Data Sets |
-| 5 | Marts and tests | Income statement, balance sheet, cash flow, confidence report |
+| 5 | Marts and tests | Done. Income statement, balance sheet, cash flow, confidence report, published as Parquet |
 | 6 | Linkbase verification | Parse calculation linkbase to back high confidence mappings |
 | 7 | API | FastAPI over the marts |
 | 8 | Optional | Snowflake comparison, LocalStack AWS variant, frontend |
@@ -844,7 +844,347 @@ is mapped from them yet.
   so a new snapshot type needs an ingest run before the next transform. Normal
   operation chains them correctly; only a manual transform first breaks.
 
-## 12. Open decisions for later phases
+## 12. Phase 5 as built: the marts
+
+Phase 5 turns reconciled facts into statements a person can read: an income
+statement, a balance sheet and a cash flow statement per company and period, each
+line carrying how the number was obtained, published as Parquet so a reader needs
+kilobytes rather than a warehouse.
+
+### 12.1 The model chain
+
+```
+int_facts (Phase 3)
+  -> int_facts_quarterly      the fourth quarter, which no filing covers
+  -> int_periods              every period labelled with a fiscal and a calendar year
+  -> int_statement_filings    which single filing a whole statement can be read from
+  -> mart_financials          one row per company, concept and period
+       -> mart_income_statement | mart_balance_sheet | mart_cash_flow
+       -> mart_confidence_report
+```
+
+`int_periods` reads both `int_facts` and `int_facts_quarterly`, because a derived
+quarter is a period no filing covers and would otherwise carry no label. The
+quarterly model does not read the spine, which is what keeps that from being a
+cycle, and is why it matches periods on dates rather than on year labels.
+
+### 12.2 A fiscal year is not a calendar year
+
+Sixteen of the 28 companies end their financial year in January, nine in December,
+and the rest in February, April, June, July or November. One label year therefore
+spans **335 days**: fiscal 2025 ends anywhere from 2025-01-31 to 2025-12-31.
+Comparing companies on that label compares different years.
+
+Two companies also changed their year end outright, and two do not have a fixed
+one at all:
+
+| Company | Fiscal calendar |
+|---|---|
+| ServiceNow | June year end through 2011, then December, with a six month stub |
+| Workday | December year end through 2010, then January, with a one month stub |
+| Adobe | 52/53 weeks, ending 11-27 to 12-03; fiscal 2021 ran 370 days |
+| Samsara | 52/53 weeks, ending 01-28 to 02-03; fiscal 2024 ran 370 days |
+
+So a period's fiscal year cannot be computed from its end date, and cannot come
+from one anchor per company either. `int_periods` takes it from the company's own
+annual periods: a period belongs to the fiscal year closed by the next annual
+period end the company reported, with a 15 day tolerance that absorbs the 52/53
+week drift. Where a period runs past the newest annual report, or more than a year
+before the nearest one, that year end is stepped whole years to reach it, which
+keeps the company's own month and day instead of assuming a calendar year.
+
+**Two year labels are published, because they answer different questions.**
+`fiscal_year` is what the company calls the year, which is what a reader checking
+a number against the filing needs. `calendar_year_equivalent` is the calendar year
+holding most of that fiscal year's days, computed as the year 183 days before the
+year end. Salesforce fiscal 2026 and ServiceNow fiscal 2025 cover almost the same
+twelve months of real time, and only the second label says so.
+
+Nothing relabels a period onto calendar quarters. Commercial data providers do,
+and it makes comparison easy, but it publishes a figure under a period the company
+never reported, which this project treats as a fabrication rather than a
+convenience.
+
+`year_end_is_observed` is false where the year end was inferred rather than filed:
+**139 of 3,093 periods**, almost all in a fiscal year whose annual report has not
+been filed yet, plus Splunk's final stub year and the two calendar changes.
+
+### 12.3 The fourth quarter
+
+A company files three 10-Qs covering three, six and nine months, then a 10-K
+covering the year. No report covers the final three months alone, so Q4 is a hole
+by construction. `int_facts_quarterly` closes it with the full year minus the nine
+month figure, which works because both are cumulative from the same fiscal year
+start. That is also why the two are matched on an identical `period_start` rather
+than on a year label: during a fiscal calendar change a year label would pair the
+wrong two periods.
+
+Three rules keep it honest.
+
+1. **Additive concepts only.** Earnings per share is a ratio and a diluted share
+   count is a weighted average, so subtracting one period from another produces a
+   number that means nothing. Which concepts those are is declared in config as
+   `additive: false`, because nothing in the facts distinguishes a ratio from a
+   sum. Without this the model would have produced 558 confidently wrong values.
+2. **A reported quarter is never shadowed.** 399 Q4 facts across 78 company years
+   already exist, mostly through the Data Sets, so a derived row is produced only
+   where no quarter exists for that period end.
+3. **Balance sheets are untouched.** They are instants, and the fourth quarter
+   balance sheet is the year end one, already reported.
+
+Of 3,460 annual concept years, 3,071 have a nine month counterpart, 2,504 of those
+are on additive concepts, and 305 already had a reported quarter, leaving
+**2,199 derived fourth quarters**. Each carries `confidence = 'derived'` and
+`source_tag = 'derived:annual-nine_month'`.
+
+Filling missing first, second and third quarters by the same subtraction of
+cumulative periods was considered and deferred: those gaps are a tagging choice
+rather than a structural one, and chaining subtractions needs two figures from two
+filings to agree.
+
+### 12.4 Statement coherence: publish both, and label them
+
+Every value is resolved on its own, taking the latest figure filed for it. That is
+the right answer to "what is this number" and the wrong one to "show me a balance
+sheet", because a company can restate one line of an old statement and never
+re-report the rest.
+
+Salesforce's balance sheet at 2017-01-31, in millions:
+
+| Filing | Filed | Assets | Liabilities | Equity |
+|---|---|---|---|---|
+| 10-K | 2017-03-06 | 17,584.9 | 10,084.8 | 7,500.1 |
+| 10-K | 2018-03-09 | 17,584.9 | 10,084.8 | 7,500.1 |
+| 10-Q | 2018-11-28 | | | **8,230.0** |
+| 10-K | 2020-03-05 | | | 8,230.0 |
+
+Everything up to March 2018 balances exactly. ASC 606 then revised equity alone,
+and assets were never re-tagged for that date. Taking the latest of each leaves the
+balance sheet 729.9 million out. **The restated 2017 balance sheet does not exist
+in XBRL as a whole**, which rules out any answer claiming to publish the correct
+one.
+
+How widespread, by statement:
+
+| Statement | Draws on one filing | Two | Three or more | Mixes filings |
+|---|---|---|---|---|
+| cash_flow | 1,320 | 0 | 0 | 0% |
+| income_statement | 1,435 | 413 | 15 | 23% |
+| balance_sheet | 149 | 732 | 280 | 87% |
+
+Mixing is usually harmless, because only 1.8% of balance sheet values and 5.1% of
+income statement values were ever revised. It breaks a statement only when a
+restatement touched one line and not the others.
+
+Of the 26 balance sheets that failed the identity before this phase, **22 balance
+exactly inside a single filing**. Three were a missing tag in config, and one is
+absent from the source data:
+
+- `us-gaap:TemporaryEquityCarryingAmount`, the single tag used before SEC split it
+  in 2013, was not mapped. Adding it fixed three Salesforce balance sheets whose
+  gaps were exactly the redeemable preferred stock they reported.
+- Workday at 2012-01-31 is 73% out. Its pre-IPO redeemable preferred stock of
+  170.9 million was never tagged for that date, so it is a coverage gap.
+
+**The decision: publish both.** `value` stays the latest filed figure.
+`int_statement_filings` chooses, per company, statement and period, the filing
+covering the most of the statement's published lines and, among equals, the most
+recently filed. Coverage comes first deliberately: recency first would select the
+2020 10-K that reports Salesforce's 2017 equity alone and call one line a balance
+sheet. `value_as_filed` is that filing's figure, and `is_coherent` records whether
+the two agree.
+
+Publishing only the latest would leave 22 statements visibly broken with no
+explanation available in the data. Publishing only the coherent filing would print
+7,500.1 and silently discard a correction the company made. A single filing carries
+the whole statement in 100% of cash flow statements, 99.5% of balance sheets and
+97.3% of income statements, so the choice is nearly always available.
+
+Derived values have no filed counterpart and are excluded from the check rather
+than recomputed inside the chosen filing.
+
+### 12.5 Only the forms config counts as reports
+
+Comparing as-filed against published exposed a bug that had been in every
+published value since Phase 3. Elastic's net income, before and after:
+
+| Fiscal year end | Published | Source | Actual |
+|---|---|---|---|
+| 2021-04-30 | −0.204M | DEF 14A | −129.4M |
+| 2023-04-30 | +0.062M | DEF 14A | −236.2M |
+| 2025-04-30 | +0.368M | DEF 14A | −108.1M |
+
+A DEF 14A is a proxy statement. Since 2022 it must carry a Pay versus Performance
+table, which is tagged in XBRL and includes `us-gaap:NetIncomeLoss`. Filers
+routinely tag it in millions, and sometimes against the wrong period context. A
+proxy is filed after the 10-K, so under a latest filed rule it won. **100 published
+net income values across 21 companies came from proxies**, 23 disagreeing with the
+report and 6 by a factor of about 1000, plus 49 values from 8-K earnings releases.
+
+`config/companies.yml` already forbade this: `report_types` lists 10-K, 10-Q, 20-F
+and their amendments. But it was only consulted during ingestion, to decide whether
+a new report had appeared, while `companyfacts` returns facts from every form a
+company ever filed. The declared policy stopped at the ingestion boundary.
+
+The fix carries `report_types` into the company snapshot and filters on it in
+`int_facts_mapped` and in both fact sources of `int_fsds_dimension_totals`, since
+the Data Sets carry S-1, S-4 and 8-K submissions too. **No value was lost**:
+published counts per statement are identical before and after, because every proxy
+fact duplicated a figure a report had already filed.
+
+### 12.6 The marts
+
+**`mart_financials`** is the source of truth: one row per company, concept and
+period, with three numbers that answer three questions. For Salesforce's equity at
+2017-01-31 they are `value` 8,230.0, `originally_reported_value` 7,500.1 and
+`value_as_filed` 7,500.1.
+
+Its grain drops `period_start` from the key `int_facts` uses. Adobe reports the
+same period twice with start dates one day apart, so at this grain those would be
+two rows for one quarter and anything summing quarters would double count. **23
+rows** are affected, all Adobe, all 2009 and 2010. The version more filings agree
+on wins, which picks the company's settled convention rather than a context typo:
+Adobe's fiscal 2009 Q1 ended 2009-02-27, so Q2 starts 2009-02-28, and that is the
+start two filings carry against one. One of the 23 is not a pure duplicate, a half
+year share count of 531,338,000 against 528,233,000, where the later filing wins.
+
+**The three statement views are generated from config.** A column per line cannot
+be written in SQL without naming the concepts, so a macro asks the database what
+the config says and writes the columns itself. The order comes from the order the
+concepts appear in `config/tag_mappings.yml`, which is already a statement order,
+and is the same convention that file uses for `tags`, where order means priority.
+Adding a concept adds a column; reordering the file reorders the statement, which
+was verified by moving a line and rebuilding.
+
+Each line becomes two columns, the value and its confidence, so a number and how
+certain it is are read in one glance. `value_as_filed` is deliberately not a third
+column per line: that would take the income statement from 16 concept columns to
+24 for a case affecting 119 rows. The statement instead carries `incoherent_lines`
+and the filing it was read from.
+
+The grain is the period, not the fiscal year, which dissolves the ServiceNow
+problem: its two fiscal years labelled 2011 are two rows, each with its own
+`fiscal_year_end`, and nothing has to be hidden.
+
+**`mart_confidence_report`** answers how much to trust a statement rather than what
+it says, at the same grain so it joins one to one. It counts lines by confidence,
+how many are derived, ambiguous, restated or incoherent, whether the statement is
+complete, and whether its identity closes. Completeness is measured against the
+lines that always apply, excluding optional concepts, or 945 sound balance sheets
+would be called incomplete for lacking redeemable preferred stock.
+
+One word summarises it, and the ordering is a judgement recorded in the model:
+
+| `trust` | Means |
+|---|---|
+| check | An identity fails, or two candidate tags disagreed |
+| mapped | Contains a weaker tag: retired, another rulebook, or recovered from dimensions |
+| computed | Contains a value derived from an identity or from adjacent periods |
+| reported | Every line is a standard tag the company filed |
+
+A possible error outranks a known approximation, and a weaker tag ranks below a
+derived value because a derived value is arithmetic over reported figures while a
+weaker tag is a judgement about what a tag means. Incoherence does not affect the
+label, because the numbers are not in doubt there, only their provenance.
+
+The identities in this model duplicate those in the consistency tests on purpose:
+the tests check them on the figures one filing published together, and the report
+checks them on the latest figure for each line. Same arithmetic, different inputs,
+different questions. The formulas stay in SQL rather than config for the reason
+`int_facts_derived` already records: they are universal accounting identities, not
+judgements about companies.
+
+### 12.7 Publishing the marts
+
+The database is 57.4 MB, most of it staging tables nobody querying a statement
+needs. The same marts as Parquet are **1.15 MB in total**, and each file stands
+alone, so reading the income statement costs 101 KB.
+
+`xbrl-publish-marts` exports every table in the main schema named `mart_`, so
+adding a mart publishes it with no code change, compresses with zstd, and uploads
+through the same `Storage` object the rest of the pipeline uses. DuckDB can write
+straight to the bucket and the dbt profile already holds credentials for reading
+it, but going through `Storage` keeps one way of talking to the bucket and lets the
+whole export be tested with a temporary database and no credentials.
+
+Files land at `warehouse/parquet/<model>.parquet` and are overwritten each run,
+covered by the existing lifecycle rule that deletes superseded versions after seven
+days. Overwriting is a write, not a delete, so the scoped key still cannot delete
+anything. A `_index.json` written last records each file's row count and when the
+run published it, so a reader can see what exists and how fresh it is with a one
+kilobyte fetch.
+
+### 12.8 Measured results
+
+Production run 36357622533, 2026-09-27: **293 dbt nodes, 290 pass, 3 warn, 0
+errors**, in 1m18s.
+
+| Mart | Rows | Parquet |
+|---|---|---|
+| mart_financials | 25,326 | 702 KB |
+| mart_unmapped_tags | 11,033 | 91 KB |
+| mart_mapping_coverage | 5,056 | 40 KB |
+| mart_confidence_report | 4,900 | 69 KB |
+| mart_income_statement | 2,068 | 101 KB |
+| mart_cash_flow | 1,602 | 50 KB |
+| mart_balance_sheet | 1,230 | 46 KB |
+| mart_custom_tags | 1,092 | 53 KB |
+
+Shares below are from the dev build of the same commit, which has up to four fewer
+statements per view.
+
+| Statement | reported | computed | mapped | check |
+|---|---|---|---|---|
+| balance_sheet | 90.2% | 5.8% | 1.3% | 2.7% |
+| cash_flow | 75.1% | 17.6% | 7.3% | 0% |
+| income_statement | **50.4%** | 12.4% | 31.6% | 5.5% |
+
+Half the income statements contain at least one line that is not a standard tag the
+company filed. That is the project's thesis stated as a number, and before this
+phase it took a manual audit to see.
+
+Coverage improved on its own: the pre-2013 temporary equity tag closed two gaps,
+leaving **16 actionable missing cells** out of 5,056.
+
+Three standing warnings, all explained rather than outstanding:
+
+- Atlassian fiscal 2017 under IFRS: revenue less cost of sales misses gross profit
+  by 6.7 million, because IFRS classifies some costs elsewhere.
+- Workday at 2012-01-31: the untagged pre-IPO preferred stock.
+- Intuit, four company years: its own quarterly figures sum to between 20 and 59
+  million away from its annual figure, on restatement free years. A disagreement
+  inside the filer's data, not ours.
+
+The quarters to year test restricts to sets where nothing was restated, because
+otherwise it reports filing behaviour rather than arithmetic. Salesforce's fiscal
+2017 operating income is the clearest case: four unrestated quarters sum to 64.2
+million, which is exactly the annual figure as originally reported, while the
+annual value is the restated 218.0 million. Without the restriction 71 of 1,763
+four quarter sets disagree; with it, 4.
+
+### 12.9 Traps found while building
+
+- **A shadowed loop variable.** `_parse_concept` already used `position` for tag
+  priority, so a new `position` parameter was silently overwritten and revenue came
+  out as line 5. Two of the three new tests exist because of it.
+- **Every `ref()` inside a loop or conditional needs a `depends_on` hint**,
+  including in singular tests. The round trip test needed four, and dbt reports
+  them one at a time.
+- **Date arithmetic widens to a timestamp in DuckDB.** `date - interval` returns a
+  timestamp, so the fiscal year end had to be cast back to a date.
+- **A measurement taken on a subset does not generalise.** The quarters to year
+  check was first measured on revenue since fiscal 2024, worst case 1,000 dollars
+  on 3.13 billion. Across all concepts and years the worst case is 70%.
+- **A column description that overstates.** `incoherent_lines` above zero was
+  documented as meaning the statement will not add up. Salesforce at 2015-01-31 has
+  two incoherent lines and balances exactly, because the restatement moved assets
+  and equity together.
+- **Adding a snapshot field is order dependent**, three times in this phase.
+  Ingestion writes the config snapshots, so a new field needs an ingest run before
+  the next transform. This is a property of keeping config in the bucket, not an
+  accident: the same coupling appeared in Phase 4 and will appear again.
+
+## 13. Open decisions for later phases
 
 Phase 3 (mapping)
 - Initial canonical concept list (about 15).
@@ -853,20 +1193,32 @@ Phase 3 (mapping)
 
 Phase 4 (Data Sets): built, see section 11.
 
-Phase 5 (marts)
-- Fiscal year versus calendar year alignment for cross company comparison.
-- Deriving Q4 as full year minus nine month year to date.
-- Surfacing latest filed and originally reported values side by side, per the
-  decision in section 8.6.
-- **Statement coherence.** Resolving each concept independently by latest filed
-  date means one statement can mix filings. Salesforce at 2017-01-31 takes assets
-  and liabilities from the 2018 10-K and equity from the 2020 one, because the
-  ASC 606 adoption adjusted opening equity without restating the prior balance
-  sheet. 26 periods across 10 companies do not balance for this reason, and the
-  consistency test warns on them. The options are per concept latest filed (today),
-  statement level resolution from a single filing, or publishing both views. The
-  choice depends on what the mart is for, so it belongs with the marts. Nothing is
-  lost either way: int_facts_mapped keeps every filing's version.
+Phase 5 (marts): built, see section 12. Statement coherence was settled by
+publishing both views; fiscal and calendar year alignment by publishing both
+labels; Q4 by subtraction on additive concepts only.
+
+Left open by Phase 5, in rough order of value:
+
+- **Deriving the other quarters.** A missing first, second or third quarter could
+  be filled the same way, as the difference of two cumulative periods. Cash flow
+  quarters are patchy for every company, so this would fill real gaps. Deferred
+  because those gaps are a tagging choice rather than structural, and chaining
+  subtractions needs two figures from two filings to agree.
+- **Whether incoherence should force a `check` trust label.** It does not today:
+  29 statements are labelled `reported` while carrying a line newer than the filing
+  they were read from. The numbers are not in doubt there, only their provenance,
+  but the opposite choice is defensible and is one clause.
+- **A contiguity rule for duplicate period starts.** Adobe's 23 rows are resolved
+  by majority of filings, which is a heuristic. The accounting correct test is
+  whether a period starts the day after the previous one ends, which needs the
+  period chain.
+- **One definition of each accounting identity.** The balance sheet identity is now
+  written in `consistency_balance_sheet` and in `mart_confidence_report`, on
+  different inputs by design, and a third partial version lives in
+  `int_facts_derived`. A macro could hold one definition.
+- **Presentation lines that are not concepts**, such as a gross margin percentage
+  or a grouping header. These would need a separate `config/statements.yml`; the
+  concept order in `config/tag_mappings.yml` was enough without one.
 
 Phase 6 (linkbase)
 - Which filings to parse (for example latest 10-K per company).
