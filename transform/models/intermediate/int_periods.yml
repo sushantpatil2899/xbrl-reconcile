@@ -1,0 +1,64 @@
+version: 2
+
+models:
+  - name: int_periods
+    description: >
+      One row per company and period, labelled with the fiscal year it belongs to
+      and the calendar year that fiscal year lines up with. Every model that needs
+      to say which year a value belongs to joins here, so the rule lives in one
+      place.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cik, period_start, period_end]
+    columns:
+      - name: cik
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_companies')
+                field: cik
+      - name: ticker
+        tests: [not_null]
+      - name: period_end
+        tests: [not_null]
+      - name: period_kind
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["instant", "quarter", "half", "nine_month", "annual", "other"]
+      - name: period_days
+        description: Actual length in days. Null for instants, which have no length.
+      - name: fiscal_year
+        description: The year the company itself calls this period's fiscal year.
+        tests: [not_null]
+      - name: fiscal_quarter
+        description: >
+          Which quarter of the fiscal year the period closes, for quarters and for
+          the instants that close them. Null for cumulative periods.
+        tests:
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4]
+                quote: false
+      - name: fiscal_year_end
+        description: >
+          The date this period's fiscal year ends on, taken from the company's own
+          annual periods where one has been filed.
+        tests: [not_null]
+      - name: calendar_year_equivalent
+        description: >
+          The calendar year holding most of the fiscal year's days. Comparing
+          companies with different year ends uses this, not fiscal_year.
+        tests: [not_null]
+      - name: is_year_end
+        description: Whether this period ends the fiscal year.
+        tests: [not_null]
+      - name: year_end_is_observed
+        description: >
+          Whether the fiscal year end was filed as an annual period or inferred.
+          False for a year whose annual report has not been filed yet, and around
+          a change of fiscal calendar.
+        tests: [not_null]

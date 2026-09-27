@@ -24,6 +24,10 @@ vars:
   # the same figure reported again. Also a fraction.
   restatement_tolerance: 0.001
 
+  # How many days a fiscal year end may drift before a period stops matching it.
+  # A 52/53 week year moves its end by a few days each year.
+  year_end_tolerance_days: 15
+
   # How far a financial statement identity may be out before it is worth
   # reporting. Looser than the others: companies round to thousands and real
   # statements carry small reconciling items.
