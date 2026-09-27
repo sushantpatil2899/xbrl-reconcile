@@ -23,18 +23,17 @@ with facts as (
 
 ),
 
-{#- Each company's fiscal years, taken from its annual periods, which is what
-    defines a fiscal year end date. -#}
+{#- Each company's fiscal years, read from the period spine so that this mart and
+    the financial mart cannot disagree about which year a value belongs to. -#}
 fiscal_years as (
 
-    select
+    select distinct
         cik,
         ticker,
-        year(period_end) as fiscal_year,
-        max(period_end) as fiscal_year_end
-    from facts
+        fiscal_year,
+        fiscal_year_end
+    from {{ ref('int_periods') }}
     where period_kind = 'annual'
-    group by all
 
 ),
 
@@ -60,13 +59,15 @@ spine as (
 
 ),
 
-{#- Durations are matched by fiscal year; instants by landing on the year end. -#}
+{#- A concept belongs to a fiscal year through the period that closes it: the
+    annual duration, or the instant dated on the year end. The spine decides which
+    periods those are, so the rule is not written twice. -#}
 year_facts as (
 
     select
         facts.cik,
         facts.concept,
-        fiscal_years.fiscal_year,
+        periods.fiscal_year,
         facts.value,
         facts.confidence,
         facts.inputs_confidence,
@@ -77,13 +78,12 @@ year_facts as (
         facts.restatement_count,
         facts.candidates_disagree
     from facts
-    join fiscal_years
-        on fiscal_years.cik = facts.cik
-        and case
-            when facts.period_kind = 'instant' then facts.period_end = fiscal_years.fiscal_year_end
-            when facts.period_kind = 'annual' then year(facts.period_end) = fiscal_years.fiscal_year
-            else false
-        end
+    join {{ ref('int_periods') }} as periods
+        on periods.cik = facts.cik
+        and periods.period_start is not distinct from facts.period_start
+        and periods.period_end = facts.period_end
+    where periods.is_year_end
+        and facts.period_kind in ('instant', 'annual')
 
 ),
 

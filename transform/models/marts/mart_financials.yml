@@ -1,0 +1,98 @@
+version: 2
+
+models:
+  - name: mart_financials
+    description: >
+      The published financial facts: one row per company, concept and period, with
+      the latest figure, the originally reported one, and the figure from the
+      filing a whole statement can be read from. Reported, derived and computed
+      fourth quarter values together, each carrying how it was obtained.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cik, concept, period_kind, period_end]
+    columns:
+      - name: cik
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_companies')
+                field: cik
+      - name: ticker
+        tests: [not_null]
+      - name: company_name
+        tests: [not_null]
+      - name: statement
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["income_statement", "balance_sheet", "cash_flow"]
+      - name: concept
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_tag_mappings')
+                field: concept
+      - name: period_end
+        tests: [not_null]
+      - name: period_kind
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["instant", "quarter", "half", "nine_month", "annual", "other"]
+      - name: fiscal_year
+        description: What the company itself calls this period's year.
+        tests: [not_null]
+      - name: calendar_year_equivalent
+        description: >
+          The calendar year most of the fiscal year falls in. Comparing companies
+          with different year ends uses this, not fiscal_year.
+        tests: [not_null]
+      - name: value
+        description: The latest figure filed for this line.
+        tests: [not_null]
+      - name: originally_reported_value
+        description: What the company reported the first time, kept so a rewrite stays visible.
+        tests: [not_null]
+      - name: value_as_filed
+        description: >
+          The figure in the filing chosen for this statement, so a statement read
+          from one source adds up. Null for a derived value, and where the chosen
+          filing did not carry this line.
+      - name: confidence
+        description: >
+          How the value was obtained. `derived` means computed from other concepts
+          or from adjacent periods, never reported by the company.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["high", "medium", "low", "derived"]
+      - name: inputs_confidence
+        description: For a derived value, the weakest confidence among its inputs.
+      - name: is_coherent
+        description: >
+          Whether the latest figure and the chosen statement's figure agree. False
+          means a later filing revised this line and not the rest of the statement.
+          Null for derived values, which have no filed counterpart.
+      - name: basis
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["us_gaap", "ifrs"]
+      - name: form
+        description: >
+          Only forms config counts as a report appear here. A proxy statement tags
+          net income in its pay versus performance table at a different scale.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["10-K", "10-K/A", "10-Q", "10-Q/A", "20-F", "20-F/A"]
+      - name: was_restated
+        tests: [not_null]
