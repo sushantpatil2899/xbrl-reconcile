@@ -1,0 +1,46 @@
+version: 2
+
+models:
+  - name: int_statement_filings
+    description: >
+      One row per company, statement and period, naming the filing a whole
+      statement can be read from. Values resolved concept by concept are current
+      but can mix filings, which is how a statement ends up not adding up.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cik, statement, period_start, period_end]
+    columns:
+      - name: cik
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_companies')
+                field: cik
+      - name: ticker
+        tests: [not_null]
+      - name: statement
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["income_statement", "balance_sheet", "cash_flow"]
+      - name: period_end
+        tests: [not_null]
+      - name: statement_accession
+        description: The filing the statement should be read from.
+        tests: [not_null]
+      - name: statement_filed_date
+        tests: [not_null]
+      - name: concepts_covered
+        description: How many of the published concepts this filing reported.
+        tests: [not_null]
+      - name: concepts_published
+        description: How many concepts the mart publishes for this statement.
+        tests: [not_null]
+      - name: covers_whole_statement
+        description: >
+          False where no single filing reported everything published, so reading
+          from one source leaves a hole.
+        tests: [not_null]

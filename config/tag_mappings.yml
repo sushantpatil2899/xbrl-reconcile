@@ -145,6 +145,7 @@ concepts:
     tags:
       - { tag: "us-gaap:TemporaryEquityCarryingAmountAttributableToParent", confidence: high }
       - { tag: "us-gaap:TemporaryEquityCarryingAmountIncludingPortionAttributableToNoncontrollingInterests", confidence: medium, note: "Includes noncontrolling interests" }
+      - { tag: "us-gaap:TemporaryEquityCarryingAmount", confidence: medium, note: "The single tag used before 2013, when SEC split it into the parent and noncontrolling variants above. Its absence left three Salesforce balance sheets short by exactly the redeemable preferred stock they reported" }
 
   cash:
     statement: balance_sheet
