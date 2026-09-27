@@ -1,0 +1,43 @@
+version: 2
+
+models:
+  - name: mart_balance_sheet
+    description: >
+      Balance sheet per company and date. Balance sheet lines are instants, a
+      photograph on one day, so there is one row per reporting date rather than per
+      period.
+
+      Columns are generated from config: adding a concept adds a column, and
+      reordering the config file reorders the statement.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cik, period_end]
+    columns:
+      - name: cik
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_companies')
+                field: cik
+      - name: ticker
+        tests: [not_null]
+      - name: period_end
+        tests: [not_null]
+      - name: fiscal_year
+        tests: [not_null]
+      - name: calendar_year_equivalent
+        description: Use this, not fiscal_year, to line companies up against each other.
+        tests: [not_null]
+      - name: incoherent_lines
+        description: >
+          How many lines are newer than the filing this statement was read from,
+          because a later filing revised them on their own. It does not follow that
+          the statement fails to balance: a restatement that moved assets and equity
+          together still adds up. The long mart holds the figures the chosen filing
+          published together.
+        tests: [not_null]
+      - name: statement_covers_whole
+        description: Whether one filing carried every line published here.
+        tests: [not_null]

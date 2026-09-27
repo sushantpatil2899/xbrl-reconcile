@@ -269,6 +269,7 @@ def test_mapping_snapshots_record_concepts_and_overrides(tmp_path):
             "unit": "USD",
             "is_optional": False,
             "is_additive": True,
+            "position": 1,
             "taxonomy": "us-gaap",
             "tag": "Revenues",
             "priority": 10,

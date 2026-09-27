@@ -196,6 +196,7 @@ def test_rows_flatten_concepts_and_overrides_for_the_snapshot():
         "unit": "USD",
         "is_optional": False,
         "is_additive": True,
+        "position": 1,
         "taxonomy": "us-gaap",
         "tag": "RevenueFromContractWithCustomerExcludingAssessedTax",
         "priority": 10,
@@ -426,6 +427,36 @@ def test_additive_is_carried_into_the_snapshot_rows():
     concepts = {"revenue": {**REVENUE, "additive": False}}
     rows = parse_mappings(make_config(concepts)).concept_rows()
     assert not any(row["is_additive"] for row in rows)
+
+
+def test_a_concepts_position_follows_the_order_of_the_config_file():
+    """The file's order is the statement's order, as its `tags` order is priority."""
+    concepts = {
+        "revenue": dict(REVENUE),
+        "cost_of_revenue": {
+            "statement": "income_statement",
+            "unit": "USD",
+            "tags": [{"tag": "us-gaap:CostOfRevenue", "confidence": "high"}],
+        },
+    }
+    config = parse_mappings(make_config(concepts))
+
+    assert config.concepts["revenue"].position == 1
+    assert config.concepts["cost_of_revenue"].position == 2
+
+
+def test_position_is_not_confused_with_a_tags_priority():
+    """Both are called position in the config's own language; only one is a line."""
+    config = parse_mappings(make_config({"revenue": dict(REVENUE)}))
+    revenue = config.concepts["revenue"]
+
+    assert revenue.position == 1
+    assert [tag.priority for tag in revenue.tags] == [10, 20, 30]
+
+
+def test_position_is_carried_into_the_snapshot_rows():
+    rows = parse_mappings(make_config({"revenue": dict(REVENUE)})).concept_rows()
+    assert {row["position"] for row in rows} == {1}
 
 
 def test_a_flag_written_as_text_is_rejected_rather_than_read_as_true():

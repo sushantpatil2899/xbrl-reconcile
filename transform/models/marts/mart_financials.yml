@@ -94,5 +94,7 @@ models:
           - accepted_values:
               arguments:
                 values: ["10-K", "10-K/A", "10-Q", "10-Q/A", "20-F", "20-F/A"]
+      - name: statement_form
+        description: The form of the filing this statement was read from.
       - name: was_restated
         tests: [not_null]

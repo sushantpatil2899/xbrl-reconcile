@@ -83,6 +83,10 @@ class ConceptSpec:
     # subtracted. Earnings per share and a weighted average share count both look
     # like ordinary numbers, so this cannot be inferred from the facts either.
     additive: bool = True
+    # Where this line sits on its statement, taken from the order the concepts
+    # appear in the config file. Inside a concept the order of `tags` already means
+    # priority, so order carrying meaning is the file's existing convention.
+    position: int = 0
 
 
 @dataclass(frozen=True)
@@ -121,6 +125,7 @@ class MappingConfig:
                 "unit": concept.unit,
                 "is_optional": concept.optional,
                 "is_additive": concept.additive,
+                "position": concept.position,
                 "taxonomy": mapping.taxonomy,
                 "tag": mapping.tag,
                 "priority": mapping.priority,
@@ -196,8 +201,8 @@ def parse_mappings(data: dict) -> MappingConfig:
 
     concepts: dict[str, ConceptSpec] = {}
     tag_owner: dict[str, str] = {}
-    for name, raw in raw_concepts.items():
-        concept = _parse_concept(name, raw)
+    for position, (name, raw) in enumerate(raw_concepts.items(), start=1):
+        concept = _parse_concept(name, raw, line=position)
         for mapping in concept.tags:
             owner = tag_owner.get(mapping.qualified_tag)
             if owner is not None:
@@ -253,7 +258,7 @@ def validate_against_companies(config: MappingConfig, companies: list[Company]) 
     return warnings
 
 
-def _parse_concept(name: str, raw: dict) -> ConceptSpec:
+def _parse_concept(name: str, raw: dict, line: int = 0) -> ConceptSpec:
     if not isinstance(raw, dict):
         raise ConfigError(f"concept {name} must be a mapping")
     _reject_unknown(set(raw), CONCEPT_KEYS, f"concept {name}")
@@ -293,6 +298,7 @@ def _parse_concept(name: str, raw: dict) -> ConceptSpec:
         components=components,
         optional=_parse_flag(name, raw, "optional", default=False),
         additive=_parse_flag(name, raw, "additive", default=True),
+        position=line,
     )
 
 

@@ -149,6 +149,7 @@ select
     deduplicated.restatement_count,
     deduplicated.was_restated,
     statements.statement_accession,
+    statements.statement_form,
     statements.statement_filed_date,
     -- Null for a derived value, which is computed from resolved figures and so has
     -- no filed counterpart. False where the chosen filing did not carry this line

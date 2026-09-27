@@ -24,6 +24,12 @@ models:
           - accepted_values:
               arguments:
                 values: ["USD", "USD/shares", "shares"]
+      - name: position
+        description: >
+          Where the concept sits on its statement, taken from the order the config
+          file lists the concepts in. The statement views build their columns from
+          this, so reordering a statement is a config edit.
+        tests: [not_null]
       - name: is_additive
         description: >
           Whether the concept's periods can be added or subtracted. False for a
