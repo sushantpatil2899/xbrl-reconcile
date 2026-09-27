@@ -17,6 +17,7 @@ xbrl-check-ciks = "xbrl_reconcile.ingest.check_ciks:main"
 xbrl-ingest-datasets = "xbrl_reconcile.ingest.run_datasets:main"
 xbrl-publish-warehouse = "xbrl_reconcile.warehouse:main"
 xbrl-fetch-warehouse = "xbrl_reconcile.warehouse:fetch_main"
+xbrl-publish-marts = "xbrl_reconcile.publish_marts:main"
 
 [dependency-groups]
 dev = [

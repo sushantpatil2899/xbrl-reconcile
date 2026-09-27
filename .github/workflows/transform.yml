@@ -45,3 +45,9 @@ jobs:
 
       - name: Publish database
         run: uv run xbrl-publish-warehouse
+
+      # The marts as Parquet, about a megabyte in total against the database's
+      # fifty six. Last, so a problem here cannot cost us the database the next
+      # incremental run builds on.
+      - name: Publish marts
+        run: uv run xbrl-publish-marts
