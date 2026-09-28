@@ -1,0 +1,66 @@
+version: 2
+
+models:
+  - name: mart_mapping_evidence
+    description: >
+      What the filings say about each tag they present, from the presentation
+      linkbase SEC flattens into the Data Sets. One row per company, statement and
+      tag: whether the config maps it, whether the filer put it where the config
+      claims, how the filer labelled it, and whether it looks like a total the
+      company is missing.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cik, statement, qualified_tag]
+    columns:
+      - name: cik
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_companies')
+                field: cik
+      - name: ticker
+        tests: [not_null]
+      - name: statement
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["income_statement", "balance_sheet", "cash_flow"]
+      - name: qualified_tag
+        tests: [not_null]
+      - name: is_mapped
+        tests: [not_null]
+      - name: mapped_concept
+        description: Null where the config maps nothing to this tag.
+      - name: statement_agrees
+        description: >
+          Whether the filer put a mapped tag on the statement the config assigns it.
+          Null for unmapped tags.
+      - name: filer_labels
+        description: >
+          Every distinct label the company used for this tag, joined. The variation
+          is evidence in itself of how loosely a tag is used.
+      - name: presented_as_a_total
+        description: >
+          The filer put it on a line labelled "Total something", not in brackets
+          beside one. Something shown only parenthetically is never a statement total.
+        tests: [not_null]
+      - name: company_has_a_gap_on_this_statement
+        description: >
+          The coverage report lists a concept this company is missing on this
+          statement. Without this condition the total label heuristic finds genuine
+          totals of things that are not our concepts.
+        tests: [not_null]
+      - name: verdict
+        description: >
+          confirms_mapping  we map it and the filer agrees where it belongs
+          mapped_elsewhere  we map it, and this is another statement it appears on
+          candidate         unmapped, labelled a total, where the company has a gap
+          unmapped          a line item we hold no concept for
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["confirms_mapping", "mapped_elsewhere", "candidate", "unmapped"]
