@@ -1,0 +1,62 @@
+version: 2
+
+models:
+  - name: stg_fsds_presentation
+    description: >
+      One row per filing, report and line: where each tag sits on each statement,
+      with the label the filer chose for it. Read from pre.txt in the landed Data Set
+      quarters, which is SEC's flattening of each filing's presentation linkbase.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [accession, report, line]
+    columns:
+      - name: accession
+        description: Must be a filing we landed, or the row belongs to another company.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_fsds_submissions')
+                field: accession
+      - name: cik
+        tests: [not_null]
+      - name: ticker
+        tests: [not_null]
+      - name: report
+        description: Which report within the filing, so a primary statement can be told from a footnote.
+        tests: [not_null]
+      - name: line
+        description: Where the tag sits on that report, in the filer's own order.
+        tests: [not_null]
+      - name: statement_code
+        description: SEC's own code, kept raw beside the translation.
+        tests: [not_null]
+      - name: statement
+        description: >
+          The statement in this project's vocabulary. Null for equity,
+          comprehensive income, cover page and unclassifiable reports, which we hold
+          no concepts for.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["income_statement", "balance_sheet", "cash_flow"]
+      - name: tag
+        tests: [not_null]
+      - name: qualified_tag
+        description: taxonomy:Tag, the form the mapping config uses.
+        tests: [not_null]
+      - name: is_custom
+        tests: [not_null]
+      - name: filer_label
+        description: >
+          The label the filer chose. The only evidence available where a mapping
+          rests on meaning rather than arithmetic.
+      - name: is_parenthetical
+        description: Shown in brackets beside a line rather than as a line of its own.
+        tests: [not_null]
+      - name: is_negated
+        description: The label reverses the sign of the value as presented.
+        tests: [not_null]
+      - name: quarter
+        tests: [not_null]
