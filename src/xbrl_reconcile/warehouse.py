@@ -45,8 +45,15 @@ def fetch_warehouse(path: Path, storage) -> bool:
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     path = Path(os.environ.get("WAREHOUSE_PATH", DEFAULT_PATH))
-    size = publish_warehouse(path, build_storage(os.environ))
-    log.info("published %s (%.1f MB) to %s", path, size / 1_000_000, WAREHOUSE_KEY)
+    storage = build_storage(os.environ)
+    size = publish_warehouse(path, storage)
+    log.info(
+        "published %s (%.1f MB) to %s in %s",
+        path,
+        size / 1_000_000,
+        WAREHOUSE_KEY,
+        storage.location,
+    )
     return 0
 
 
@@ -54,10 +61,24 @@ def fetch_main() -> int:
     """Fetch the previous database so the run can build on it instead of rebuilding."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     path = Path(os.environ.get("WAREHOUSE_PATH", DEFAULT_PATH))
-    if fetch_warehouse(path, build_storage(os.environ)):
+    storage = build_storage(os.environ)
+    if fetch_warehouse(path, storage):
         log.info(
-            "fetched %s (%.1f MB) from %s", path, path.stat().st_size / 1_000_000, WAREHOUSE_KEY
+            "fetched %s (%.1f MB) from %s in %s",
+            path,
+            path.stat().st_size / 1_000_000,
+            WAREHOUSE_KEY,
+            storage.location,
         )
     else:
-        log.info("no database at %s yet; models will build from scratch", WAREHOUSE_KEY)
+        # Naming the location matters more than it looks. An absent database, the
+        # wrong backend and the wrong bucket all produce this line, and only the
+        # location tells them apart. Reported as a warning because in CI a silent
+        # miss means every model rebuilds from scratch and the only symptom is a
+        # slow job.
+        log.warning(
+            "no database at %s in %s; models will build from scratch",
+            WAREHOUSE_KEY,
+            storage.location,
+        )
     return 0

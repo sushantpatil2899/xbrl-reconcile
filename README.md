@@ -159,6 +159,23 @@ cd infra/terraform
 terraform init && terraform plan
 ```
 
+Backblaze has two APIs and they do not take the same credentials. The Terraform
+provider uses the B2 native API, whose master key ID is 12 characters. Everything
+else here, this project's own code and DuckDB's httpfs, speaks the S3 compatible
+API, which **rejects the master application key outright**: it needs a key created
+under Account, Application Keys, whose ID is around 25 characters. A master key
+produces `InvalidAccessKeyId: Malformed Access Key Id`, before any permission is
+checked. Terraform creates a scoped key for exactly this reason.
+
+To read the published database locally, create a read only key limited to the
+bucket, then:
+
+```bash
+export STORAGE_BACKEND=b2 B2_BUCKET=<bucket> B2_ENDPOINT=https://s3.<region>.backblazeb2.com
+export B2_INGEST_KEY_ID=<key id> B2_INGEST_KEY=<key>
+WAREHOUSE_PATH=transform/prod.duckdb uv run xbrl-fetch-warehouse
+```
+
 Ingestion can also be run directly:
 
 ```bash

@@ -6,7 +6,10 @@ select distinct
     t.tag,
     t.version as declared_version,
     t.custom = '1' as is_custom,
-    case when t.custom = '1' then 'custom' else split_part(t.version, '/', 1) end as taxonomy,
+    case
+        when t.custom = '1' then 'custom'
+        else {{ taxonomy_from_version('t.version') }}
+    end as taxonomy,
     t.abstract = '1' as is_abstract,
     t.datatype,
     t.iord as instant_or_duration,

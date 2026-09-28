@@ -99,11 +99,13 @@ def _export(connection, name: str, out: Path, storage) -> dict:
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     path = Path(os.environ.get("WAREHOUSE_PATH", DEFAULT_PATH))
-    published = publish_marts(path, build_storage(os.environ), datetime.now(UTC))
+    storage = build_storage(os.environ)
+    published = publish_marts(path, storage, datetime.now(UTC))
     log.info(
-        "published %d marts (%.0f KB) to %s",
+        "published %d marts (%.0f KB) to %s in %s",
         len(published),
         sum(mart["bytes"] for mart in published) / 1024,
         PARQUET_PREFIX,
+        storage.location,
     )
     return 0

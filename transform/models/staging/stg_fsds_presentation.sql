@@ -68,8 +68,8 @@ select
     lines.declared_version,
     -- A custom tag's version is the accession of the filing that declared it, so the
     -- stable form is custom:<Tag>, exactly as the fact and tag models do it.
-    coalesce(tags.taxonomy, split_part(lines.declared_version, '/', 1)) as taxonomy,
-    coalesce(tags.taxonomy, split_part(lines.declared_version, '/', 1))
+    coalesce(tags.taxonomy, {{ taxonomy_from_version('lines.declared_version') }}) as taxonomy,
+    coalesce(tags.taxonomy, {{ taxonomy_from_version('lines.declared_version') }})
         || ':' || lines.tag as qualified_tag,
     coalesce(tags.is_custom, false) as is_custom,
     lines.filer_label,

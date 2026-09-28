@@ -1,7 +1,17 @@
+import logging
+import os
+from pathlib import Path
+from unittest.mock import patch
+
 import pytest
 
-from xbrl_reconcile.ingest.storage import LocalStorage
-from xbrl_reconcile.warehouse import WAREHOUSE_KEY, fetch_warehouse, publish_warehouse
+from xbrl_reconcile.ingest.storage import LocalStorage, S3Storage
+from xbrl_reconcile.warehouse import (
+    WAREHOUSE_KEY,
+    fetch_main,
+    fetch_warehouse,
+    publish_warehouse,
+)
 
 
 def test_uploads_database_file(tmp_path):
@@ -62,3 +72,27 @@ def test_fetch_replaces_a_stale_local_database(tmp_path):
     fetch_warehouse(target, storage)
 
     assert target.read_bytes() == b"from-bucket"
+
+
+def test_storage_can_say_where_it_reads_and_writes():
+    assert LocalStorage(Path("data")).location == "local folder data"
+    assert S3Storage("a-bucket", client=None).location == "bucket a-bucket"
+
+
+def test_a_missing_database_says_where_it_looked(tmp_path, caplog):
+    """An absent database, the wrong backend and the wrong bucket all look the same.
+
+    Only the location tells them apart, and in CI a silent miss means every model
+    rebuilds from scratch with a slow job as the only symptom.
+    """
+    environment = {
+        "STORAGE_BACKEND": "local",
+        "LOCAL_DATA_DIR": str(tmp_path / "empty"),
+        "WAREHOUSE_PATH": str(tmp_path / "xbrl.duckdb"),
+    }
+
+    with caplog.at_level(logging.WARNING), patch.dict(os.environ, environment, clear=False):
+        fetch_main()
+
+    assert f"local folder {tmp_path / 'empty'}" in caplog.text
+    assert caplog.records[-1].levelname == "WARNING"

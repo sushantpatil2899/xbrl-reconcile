@@ -17,6 +17,12 @@ class Storage(Protocol):
 
     def read(self, key: str) -> bytes | None: ...
 
+    # Where this storage actually reads and writes. A log line saying a file was not
+    # found is only actionable if it also says where it looked: the same absence
+    # means an empty bucket, the wrong backend, or the wrong bucket.
+    @property
+    def location(self) -> str: ...
+
 
 def snapshot_key(dataset: str, cik10: str, run_ts: str) -> str:
     return f"{RAW_PREFIX}/{dataset}/cik={cik10}/{run_ts}.json.gz"
@@ -30,6 +36,10 @@ def config_snapshot_key(name: str, run_ts: str) -> str:
 class LocalStorage:
     def __init__(self, root: Path):
         self._root = Path(root)
+
+    @property
+    def location(self) -> str:
+        return f"local folder {self._root}"
 
     def write(self, key: str, data: bytes) -> None:
         path = self._root / key
@@ -45,6 +55,10 @@ class S3Storage:
     def __init__(self, bucket: str, client):
         self._bucket = bucket
         self._client = client
+
+    @property
+    def location(self) -> str:
+        return f"bucket {self._bucket}"
 
     def write(self, key: str, data: bytes) -> None:
         self._client.put_object(Bucket=self._bucket, Key=key, Body=data)

@@ -55,10 +55,11 @@ select
     f.tag,
     f.declared_version,
     t.is_custom,
-    coalesce(t.taxonomy, split_part(f.declared_version, '/', 1)) as taxonomy,
+    coalesce(t.taxonomy, {{ taxonomy_from_version('f.declared_version') }}) as taxonomy,
     -- The stable name a mapping rule can refer to, matching the config's
     -- taxonomy:Tag convention.
-    coalesce(t.taxonomy, split_part(f.declared_version, '/', 1)) || ':' || f.tag as qualified_tag,
+    coalesce(t.taxonomy, {{ taxonomy_from_version('f.declared_version') }}) || ':' || f.tag
+        as qualified_tag,
     t.label as tag_label,
     try_strptime(f.ddate, '%Y%m%d')::date as period_end,
     case f.qtrs
