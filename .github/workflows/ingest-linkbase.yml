@@ -1,0 +1,38 @@
+name: ingest-linkbase
+
+# A filing is immutable once accepted, so its calculation linkbase is fetched once
+# and never again. There is nothing to do until a company files a new annual report,
+# which happens once a year per company, so monthly is generous. The run is
+# idempotent: anything already landed, and anything found to have no calculation
+# linkbase at all, is skipped.
+on:
+  schedule:
+    - cron: "0 8 6 * *"
+  workflow_dispatch:
+    inputs:
+      max_filings:
+        description: How many filings to land in this run
+        required: false
+        default: "300"
+
+concurrency:
+  group: ingest-linkbase
+  cancel-in-progress: false
+
+jobs:
+  ingest-linkbase:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      STORAGE_BACKEND: b2
+      SEC_CONTACT_EMAIL: ${{ secrets.SEC_CONTACT_EMAIL }}
+      B2_INGEST_KEY_ID: ${{ secrets.B2_INGEST_KEY_ID }}
+      B2_INGEST_KEY: ${{ secrets.B2_INGEST_KEY }}
+      B2_BUCKET: ${{ vars.B2_BUCKET }}
+      B2_ENDPOINT: ${{ vars.B2_ENDPOINT }}
+      MAX_FILINGS: ${{ inputs.max_filings || '300' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.1.0
+      - run: uv sync --locked --no-dev
+      - run: uv run xbrl-ingest-linkbase
