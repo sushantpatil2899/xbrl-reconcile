@@ -219,3 +219,34 @@ def test_another_http_error_is_still_a_failure(tmp_path):
 
     assert "500" in result.failed["0001108524-18-000011"]
     assert result.unavailable == []
+
+
+def test_a_format_bump_reparses_from_stored_xml_without_a_request(tmp_path):
+    """The raw file is kept as published precisely so this costs no requests."""
+    storage = LocalStorage(tmp_path)
+    landed(storage, [{"accn": "0001108524-18-000011", "form": "10-K"}])
+    client = edgar_for()
+    run_linkbase_ingestion([company()], client, storage, NOW)
+    requests_after_fetch = len(client.requested)
+
+    # An older run stored arcs in the first format.
+    state = json.loads(storage.read(LINKBASE_STATE_KEY))
+    state["0001108524-18-000011"]["arcs_format"] = 1
+    storage.write(LINKBASE_STATE_KEY, json.dumps(state).encode())
+
+    result = run_linkbase_ingestion([company()], client, storage, NOW)
+
+    assert result.reparsed == ["0001108524-18-000011"]
+    assert len(client.requested) == requests_after_fetch, "no request is made to re-parse"
+    arcs = json.loads(storage.read(linkbase_key("0001108524", "0001108524-18-000011", "arcs.json")))
+    assert all("child_schema" in arc for arc in arcs)
+
+
+def test_a_filing_already_at_the_current_format_is_left_alone(tmp_path):
+    storage = LocalStorage(tmp_path)
+    landed(storage, [{"accn": "0001108524-18-000011", "form": "10-K"}])
+    run_linkbase_ingestion([company()], edgar_for(), storage, NOW)
+
+    result = run_linkbase_ingestion([company()], edgar_for(), storage, NOW)
+
+    assert result.reparsed == []

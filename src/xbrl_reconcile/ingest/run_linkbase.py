@@ -12,6 +12,11 @@ reach that far.
 A filing is immutable once accepted, so anything already fetched is never fetched
 again, and a filing with no calculation linkbase is recorded as having none rather
 than retried on every run.
+
+When the shape of arcs.json changes, ARCS_FORMAT is bumped and a run re-parses any
+filing whose stored arcs are behind, reading the XML already in the bucket. That
+costs no requests and is the reason the raw file is kept as published rather than
+only its flattened form.
 """
 
 import gzip
@@ -25,6 +30,7 @@ from pathlib import Path
 from xbrl_reconcile.config import Company, load_companies
 from xbrl_reconcile.ingest.http import PoliteClient
 from xbrl_reconcile.ingest.linkbase import (
+    ARCS_FORMAT,
     LINKBASE_PREFIX,
     calculation_filename,
     index_url,
@@ -59,6 +65,7 @@ class LinkbaseRunResult:
     skipped: list[str] = field(default_factory=list)
     no_linkbase: list[str] = field(default_factory=list)
     unavailable: list[str] = field(default_factory=list)
+    reparsed: list[str] = field(default_factory=list)
     failed: dict[str, str] = field(default_factory=dict)
 
 
@@ -106,6 +113,15 @@ def filings_to_fetch(
     return todo
 
 
+def filings_to_reparse(state: dict) -> list[str]:
+    """Filings whose stored arcs predate the current format, so they can be redone."""
+    return sorted(
+        accession
+        for accession, record in state.items()
+        if record.get("linkbase") and record.get("arcs_format", 1) < ARCS_FORMAT
+    )
+
+
 def run_linkbase_ingestion(
     companies: list[Company],
     client,
@@ -121,6 +137,36 @@ def run_linkbase_ingestion(
         todo = todo[:max_filings]
 
     run_ts = now.astimezone(UTC).strftime(TIMESTAMP_FORMAT)
+
+    for accession in filings_to_reparse(state):
+        record = state[accession]
+        company = next((c for c in companies if c.ticker == record.get("ticker")), None)
+        if company is None:
+            continue
+        try:
+            stored = storage.read(linkbase_key(company.cik10, accession, "cal.xml.gz"))
+            if stored is None:
+                log.warning("%s %s has no stored linkbase to re-parse", company.ticker, accession)
+                continue
+            arcs = parse_calculation_arcs(gzip.decompress(stored))
+            storage.write(
+                linkbase_key(company.cik10, accession, "arcs.json"),
+                json.dumps(arcs, indent=2).encode(),
+            )
+            record["arcs"] = len(arcs)
+            record["arcs_format"] = ARCS_FORMAT
+            record["reparsed_at"] = run_ts
+            result.reparsed.append(accession)
+        except Exception as err:
+            log.error("%s %s re-parse failed: %s", company.ticker, accession, err)
+            result.failed[accession] = str(err)
+    if result.reparsed:
+        log.info(
+            "re-parsed %d filings from stored XML at format %d",
+            len(result.reparsed),
+            ARCS_FORMAT,
+        )
+
     for company, accession, form in todo:
         try:
             try:
@@ -172,6 +218,7 @@ def run_linkbase_ingestion(
                 "form": form,
                 "linkbase": filename,
                 "arcs": len(arcs),
+                "arcs_format": ARCS_FORMAT,
                 "fetched_at": run_ts,
             }
             result.landed.append(accession)
@@ -201,9 +248,10 @@ def main() -> int:
     )
 
     log.info(
-        "done: %d landed, %d without a linkbase, %d not served by EDGAR, "
+        "done: %d landed, %d re-parsed, %d without a linkbase, %d not served by EDGAR, "
         "%d failed, %d left for a later run",
         len(result.landed),
+        len(result.reparsed),
         len(result.no_linkbase),
         len(result.unavailable),
         len(result.failed),

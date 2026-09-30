@@ -18,6 +18,17 @@ The parse is mechanical and stays that way. Concept names are stored exactly as
 the filing writes them, `us-gaap_GrossProfit` with an underscore, and weights and
 orders as the text they appear as. Turning those into the project's taxonomy:Tag
 convention is a transformation, and transformations belong in dbt.
+
+Each end of an arc also keeps the schema its concept is declared in, because that
+is what makes a tag custom, definitionally rather than by guesswork:
+
+    http://xbrl.fasb.org/us-gaap/2017/elts/us-gaap-2017-01-31.xsd#us-gaap_GrossProfit
+    crm-20180131.xsd#crm_SomethingCustom
+
+A standard concept is referenced by absolute URL to the taxonomy that defines it. A
+concept the filer invented is referenced relatively, because it is declared in the
+filing's own schema sitting in the same directory. So a relative schema means a
+custom tag, with no list of known prefixes to maintain.
 """
 
 import json
@@ -25,6 +36,11 @@ import xml.etree.ElementTree as ET
 
 ARCHIVES = "https://www.sec.gov/Archives/edgar/data"
 LINKBASE_PREFIX = "raw/linkbase"
+
+# Bumped when the shape of arcs.json changes. A run re-parses any filing whose
+# stored arcs are behind, reading the XML already in the bucket and making no
+# request, which is what keeping the raw file as published buys.
+ARCS_FORMAT = 2
 
 LINK_NS = "{http://www.xbrl.org/2003/linkbase}"
 XLINK_NS = "{http://www.w3.org/1999/xlink}"
@@ -80,8 +96,9 @@ def parse_calculation_arcs(xml_bytes: bytes) -> list[dict]:
         for locator in network.findall(f"{LINK_NS}loc"):
             label = locator.get(f"{XLINK_NS}label")
             href = locator.get(f"{XLINK_NS}href", "")
-            if label:
-                locators[label] = href.split("#")[-1]
+            if label and "#" in href:
+                schema, concept = href.rsplit("#", 1)
+                locators[label] = (concept, schema)
         for arc in network.findall(f"{LINK_NS}calculationArc"):
             parent = locators.get(arc.get(f"{XLINK_NS}from"))
             child = locators.get(arc.get(f"{XLINK_NS}to"))
@@ -92,8 +109,10 @@ def parse_calculation_arcs(xml_bytes: bytes) -> list[dict]:
             arcs.append(
                 {
                     "role": role,
-                    "parent": parent,
-                    "child": child,
+                    "parent": parent[0],
+                    "parent_schema": parent[1],
+                    "child": child[0],
+                    "child_schema": child[1],
                     "weight": arc.get("weight"),
                     "order": arc.get("order"),
                 }

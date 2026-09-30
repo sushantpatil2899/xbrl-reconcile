@@ -10,23 +10,30 @@ from xbrl_reconcile.ingest.linkbase import (
     parse_calculation_arcs,
 )
 
-LINKBASE = b"""<?xml version="1.0" encoding="UTF-8"?>
+# Shaped like a real linkbase, which matters for one reason: a standard concept is
+# referenced by absolute URL to the taxonomy that defines it, and one the filer
+# invented is referenced relatively, because it lives in the filing's own schema.
+# That difference is what makes a tag custom, so a fixture using relative hrefs
+# throughout would hide the rule it is meant to exercise.
+FASB = "http://xbrl.fasb.org/us-gaap/2017/elts/us-gaap-2017-01-31.xsd"
+
+LINKBASE = f"""<?xml version="1.0" encoding="UTF-8"?>
 <linkbase xmlns="http://www.xbrl.org/2003/linkbase"
           xmlns:xlink="http://www.w3.org/1999/xlink">
   <calculationLink xlink:role="http://www.example.com/role/ConsolidatedStatementsOfOperations">
-    <loc xlink:href="us-gaap-2017.xsd#us-gaap_GrossProfit" xlink:label="gp"/>
-    <loc xlink:href="us-gaap-2017.xsd#us-gaap_SalesRevenueServicesNet" xlink:label="rev"/>
-    <loc xlink:href="us-gaap-2017.xsd#us-gaap_CostOfServices" xlink:label="cost"/>
+    <loc xlink:href="{FASB}#us-gaap_GrossProfit" xlink:label="gp"/>
+    <loc xlink:href="{FASB}#us-gaap_SalesRevenueServicesNet" xlink:label="rev"/>
+    <loc xlink:href="{FASB}#us-gaap_CostOfServices" xlink:label="cost"/>
     <calculationArc xlink:from="gp" xlink:to="rev" weight="1" order="1"/>
     <calculationArc xlink:from="gp" xlink:to="cost" weight="-1" order="2"/>
   </calculationLink>
   <calculationLink xlink:role="http://www.example.com/role/BusinessCombinationsDetails">
-    <loc xlink:href="us-gaap-2017.xsd#us-gaap_Assets" xlink:label="a"/>
+    <loc xlink:href="{FASB}#us-gaap_Assets" xlink:label="a"/>
     <loc xlink:href="crm-20180131.xsd#crm_SomethingCustom" xlink:label="c"/>
     <calculationArc xlink:from="a" xlink:to="c" weight="1" order="1"/>
   </calculationLink>
 </linkbase>
-"""
+""".encode()
 
 
 def test_arcs_carry_the_filers_own_arithmetic():
@@ -53,6 +60,16 @@ def test_concept_names_are_stored_as_the_filing_writes_them():
 
     assert any(arc["child"] == "crm_SomethingCustom" for arc in arcs)
     assert all("_" in arc["parent"] for arc in arcs)
+
+
+def test_a_relative_schema_is_what_marks_a_tag_as_the_filers_own():
+    arcs = parse_calculation_arcs(LINKBASE)
+
+    custom = [a["child"] for a in arcs if not a["child_schema"].startswith("http")]
+    standard = [a["child"] for a in arcs if a["child_schema"].startswith("http")]
+
+    assert custom == ["crm_SomethingCustom"]
+    assert "us-gaap_CostOfServices" in standard
 
 
 def test_an_arc_whose_ends_are_not_declared_is_dropped():
