@@ -1,0 +1,48 @@
+version: 2
+
+models:
+  - name: stg_calculation_arcs
+    description: >
+      One row per calculation relationship from the annual reports' own linkbases:
+      which tag is a part of which, with what weight, in which network. The only
+      source in the project that states a tag is a component of another.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [accession, role, parent_tag, child_tag]
+    columns:
+      - name: accession
+        tests: [not_null]
+      - name: cik
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_companies')
+                field: cik
+      - name: ticker
+        tests: [not_null]
+      - name: role
+        description: >
+          The network the arc belongs to. Kept whole, because a filing has about a
+          hundred networks and most are footnote detail rather than statements.
+        tests: [not_null]
+      - name: parent_tag
+        tests: [not_null]
+      - name: child_tag
+        tests: [not_null]
+      - name: parent_taxonomy
+        description: custom when the concept is declared in the filing's own schema.
+        tests: [not_null]
+      - name: child_taxonomy
+        tests: [not_null]
+      - name: parent_qualified_tag
+        description: taxonomy:Tag, the form the mapping config uses.
+        tests: [not_null]
+      - name: child_qualified_tag
+        tests: [not_null]
+      - name: weight
+        description: >
+          Plus or minus one, as a number. Filers write both 1 and 1.00 for the same
+          weight, so comparing the raw text would split one weight into two.
+        tests: [not_null]
