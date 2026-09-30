@@ -1,0 +1,53 @@
+version: 2
+
+models:
+  - name: mart_calculation_evidence
+    description: >
+      Whether the filings' own declared arithmetic supports each tag our config
+      considered for a concept. A contradiction means the filer treats the tag as an
+      input to something we already call that concept's total.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cik, concept, qualified_tag]
+    columns:
+      - name: cik
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_companies')
+                field: cik
+      - name: ticker
+        tests: [not_null]
+      - name: concept
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_tag_mappings')
+                field: concept
+      - name: qualified_tag
+        tests: [not_null]
+      - name: filings_with_arcs
+        description: >
+          How many of this company's annual reports carry a calculation linkbase. Zero
+          means the mapping is unexamined rather than unsupported.
+        tests: [not_null]
+      - name: declared_part_of
+        description: The tags the filer computes from this one, among tags of the same concept.
+      - name: input_to
+        description: Everything the filer computes from this tag, whatever the concept.
+      - name: declared_components
+        description: How many components the filer declares under it, which a real total has.
+        tests: [not_null]
+      - name: calculation_verdict
+        description: >
+          component_of_same_concept  the filer treats it as a part of a total we map
+          confirmed_total            nothing in the arcs contradicts the mapping
+          no_arcs                    this company has no calculation linkbase at all
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["confirmed_total", "component_of_same_concept", "no_arcs"]

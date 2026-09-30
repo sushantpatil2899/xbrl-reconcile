@@ -1,0 +1,36 @@
+version: 2
+
+models:
+  - name: int_calculation_arcs
+    description: >
+      One row per calculation arc, with what our config maps each end to and whether
+      the arc sits on a primary statement rather than in a footnote.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [accession, role, parent_qualified_tag, child_qualified_tag]
+    columns:
+      - name: accession
+        tests: [not_null]
+      - name: ticker
+        tests: [not_null]
+      - name: parent_qualified_tag
+        tests: [not_null]
+      - name: child_qualified_tag
+        tests: [not_null]
+      - name: parent_concept
+        description: What our config maps the computed line to, if anything.
+      - name: child_concept
+        description: What our config maps the input to, if anything.
+      - name: is_same_concept
+        description: >
+          Both ends map to the same concept, so the child is an input to something we
+          already treat as that concept's total and cannot itself be the total.
+        tests: [not_null]
+      - name: is_statement_level
+        description: >
+          Both ends appear on a primary statement in pre.txt. Role names cannot be
+          used for this: filers spell them differently across their own years.
+        tests: [not_null]
+      - name: weight
+        tests: [not_null]
