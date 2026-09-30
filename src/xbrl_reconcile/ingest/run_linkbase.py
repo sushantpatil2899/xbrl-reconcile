@@ -41,6 +41,12 @@ LINKBASE_STATE_KEY = f"{LINKBASE_PREFIX}/_state/filings.json"
 TIMESTAMP_FORMAT = "%Y-%m-%dT%H%M%SZ"
 DEFAULT_MAX_FILINGS = 300
 
+# A filing directory that EDGAR does not serve. companyfacts attributes 555 facts to
+# Salesforce accession 0001108524-21-000014, a 10-K filed 2021-03-17, and EDGAR
+# returns 404 for the directory itself, not only for its index. That will not change,
+# so it is recorded rather than retried every month, and reported rather than hidden.
+NOT_ON_EDGAR = "404"
+
 # The annual forms among the report types config allows. Config decides which forms
 # count as a report at all; this narrows that to the ones covering a whole year,
 # because a 10-Q's linkbase describes the same tags as its year's 10-K.
@@ -52,6 +58,7 @@ class LinkbaseRunResult:
     landed: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
     no_linkbase: list[str] = field(default_factory=list)
+    unavailable: list[str] = field(default_factory=list)
     failed: dict[str, str] = field(default_factory=dict)
 
 
@@ -116,7 +123,26 @@ def run_linkbase_ingestion(
     run_ts = now.astimezone(UTC).strftime(TIMESTAMP_FORMAT)
     for company, accession, form in todo:
         try:
-            listing = client.get(index_url(company.cik, accession))
+            try:
+                listing = client.get(index_url(company.cik, accession))
+            except Exception as err:
+                if NOT_ON_EDGAR not in str(err):
+                    raise
+                state[accession] = {
+                    "ticker": company.ticker,
+                    "form": form,
+                    "linkbase": None,
+                    "unavailable": True,
+                    "arcs": 0,
+                    "fetched_at": run_ts,
+                }
+                result.unavailable.append(accession)
+                log.warning(
+                    "%s %s is in companyfacts but EDGAR serves no such filing",
+                    company.ticker,
+                    accession,
+                )
+                continue
             filename = calculation_filename(listing)
             if filename is None:
                 # Early filings often have no calculation linkbase. Recording it stops
@@ -175,9 +201,11 @@ def main() -> int:
     )
 
     log.info(
-        "done: %d landed, %d without a linkbase, %d failed, %d left for a later run",
+        "done: %d landed, %d without a linkbase, %d not served by EDGAR, "
+        "%d failed, %d left for a later run",
         len(result.landed),
         len(result.no_linkbase),
+        len(result.unavailable),
         len(result.failed),
         len(result.skipped),
     )

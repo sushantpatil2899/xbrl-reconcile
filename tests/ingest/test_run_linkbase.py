@@ -187,3 +187,35 @@ def test_a_disabled_company_is_not_fetched(tmp_path):
     run_linkbase_ingestion([company(enabled=False)], client, storage, NOW)
 
     assert client.requested == []
+
+
+def test_a_filing_edgar_does_not_serve_is_recorded_rather_than_retried(tmp_path):
+    """companyfacts references filings EDGAR has no directory for. Retrying a 404
+    every month would leave the job permanently red for something that cannot heal."""
+    storage = LocalStorage(tmp_path)
+    landed(storage, [{"accn": "0001108524-21-000014", "form": "10-K"}])
+    client = FakeEdgar({})  # every URL 404s
+
+    result = run_linkbase_ingestion([company()], client, storage, NOW)
+
+    assert result.unavailable == ["0001108524-21-000014"]
+    assert result.failed == {}, "a permanent absence is not a failure to report"
+    state = json.loads(storage.read(LINKBASE_STATE_KEY))
+    assert state["0001108524-21-000014"]["unavailable"] is True
+
+    again = run_linkbase_ingestion([company()], client, storage, NOW)
+    assert again.unavailable == [], "and it is not asked for a second time"
+
+
+def test_another_http_error_is_still_a_failure(tmp_path):
+    """Only a 404 is permanent. A 500 should be retried next month."""
+    storage = LocalStorage(tmp_path)
+    landed(storage, [{"accn": "0001108524-18-000011", "form": "10-K"}])
+    client = edgar_for()
+    index = "https://www.sec.gov/Archives/edgar/data/1108524/000110852418000011/index.json"
+    client.by_url[index] = HttpError("GET failed with status 500")
+
+    result = run_linkbase_ingestion([company()], client, storage, NOW)
+
+    assert "500" in result.failed["0001108524-18-000011"]
+    assert result.unavailable == []
