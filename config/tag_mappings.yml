@@ -32,6 +32,7 @@ concepts:
       - { tag: "us-gaap:Revenues", confidence: high }
       - { tag: "us-gaap:SalesRevenueNet", confidence: medium, note: "Retired in 2018 when ASC 606 took effect" }
       - { tag: "ifrs-full:Revenue", confidence: medium }
+      - { tag: "ifrs-full:RevenueFromContractsWithCustomers", confidence: medium, note: "The IFRS 15 form, which Atlassian used from 2019. It reported both tags for 2017 and 2018 during the transition, the same shape ASC 606 produced for US filers" }
 
   cost_of_revenue:
     statement: income_statement
@@ -192,6 +193,60 @@ summable_axes:
       plus ProductAndOther.
 
 company_overrides:
+  # Every override below is bounded by year, and the bounds are not cosmetic. A tag
+  # can be a total for one filer in one year and a component for the same filer in
+  # another, and the filings' own calculation linkbases say which. Salesforce declares
+  # CostOfServices a child of CostOfRevenue in its 2010 to 2013 filings, and a child
+  # of GrossProfit from 2015, so it is a component in the first window and the cost
+  # line itself in the second. An unbounded override would corrupt the years that are
+  # already right.
+  - cik: 1108524
+    concept: cost_of_revenue
+    prefer: ["us-gaap:CostOfServices"]
+    confidence: medium
+    from_year: 2015
+    through_year: 2016
+    note: >
+      Salesforce tagged no cost of revenue total for these two years, leaving the
+      line empty while gross profit was reported. It labels this tag "Total cost of
+      revenues" on its own income statement, and its linkbase places the tag directly
+      under GrossProfit rather than under CostOfRevenue. Revenue 5,373.586 less
+      1,289.270 is 4,084.316, the gross profit it reported, exactly. The 2010 to 2013
+      filings use the same tag as a component, which is why this stops at 2016.
+
+  - cik: 1660134
+    concept: cost_of_revenue
+    prefer: ["us-gaap:CostOfServices"]
+    confidence: medium
+    from_year: 2016
+    through_year: 2016
+    note: >
+      Okta's first reported year, labelled "Total cost of revenue" by Okta itself.
+      Revenue 85.907 less 36.024 is 49.883, the gross profit it reported, exactly.
+      From 2017 it tags CostOfGoodsAndServicesSold, which needs no override.
+
+  - cik: 1660134
+    concept: revenue
+    prefer: ["us-gaap:SalesRevenueServicesNet"]
+    confidence: medium
+    from_year: 2016
+    through_year: 2016
+    note: >
+      The same year and the same statement, where Okta labels this tag "Total
+      revenue". Both halves of that income statement were missing for want of two
+      tags retired by ASC 606.
+
+  - cik: 1650372
+    concept: revenue
+    prefer: ["ifrs-full:RevenueFromContractsWithCustomers"]
+    confidence: medium
+    from_year: 2019
+    through_year: 2020
+    note: >
+      Atlassian stopped tagging ifrs-full:Revenue after 2018 and reported only the
+      IFRS 15 form, so these two years had no revenue at all. 1,210.127 and 1,614.173
+      respectively. Its 2021 move to US GAAP needs no override.
+
   - cik: 1353283
     concept: net_income
     prefer: ["us-gaap:NetIncomeLossAvailableToCommonStockholdersBasic"]

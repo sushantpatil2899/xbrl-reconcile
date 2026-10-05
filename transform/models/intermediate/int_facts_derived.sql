@@ -26,6 +26,14 @@
   The formulas live here rather than in config because they are universal
   identities, not judgements about companies. Which companies need them is
   discovered from the data, not configured.
+
+  Operating income appears as both an input and an output below, because the same
+  identity is useful in two directions. Operating expenses are derived from it where
+  a filer reports no expense total, and it is derived from operating expenses where a
+  filer reports no operating income. HubSpot's 2012 is the second case: its gross
+  profit of 34.766 and operating expenses of 53.506 were both reported and the line
+  between them was empty. Nothing can be derived from itself, because a derived value
+  is only produced where the concept was not reported.
 #}
 
 {{ config(materialized='table') }}
@@ -42,6 +50,12 @@
         "statement": "income_statement",
         "expression": "revenue-cost_of_revenue-operating_income",
         "terms": [("revenue", "+"), ("cost_of_revenue", "-"), ("operating_income", "-")],
+    },
+    {
+        "concept": "operating_income",
+        "statement": "income_statement",
+        "expression": "gross_profit-operating_expenses",
+        "terms": [("gross_profit", "+"), ("operating_expenses", "-")],
     },
     {
         "concept": "total_liabilities",

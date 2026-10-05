@@ -1148,8 +1148,14 @@ leaving **16 actionable missing cells** out of 5,056.
 
 Three standing warnings, all explained rather than outstanding:
 
-- Atlassian fiscal 2017 under IFRS: revenue less cost of sales misses gross profit
-  by 6.7 million, because IFRS classifies some costs elsewhere.
+- Atlassian fiscal 2017 under IFRS: revenue less cost of sales missed gross profit
+  by 6.7 million. This was attributed to IFRS classifying some costs elsewhere, and
+  that was wrong. Atlassian restated 2017 and 2018 under IFRS 15 in its 2019 20-F,
+  moving revenue from 619.936 to 626.684 and gross profit from 500.775 to 507.523.
+  Both vintages are internally consistent. The restated revenue carried a tag,
+  ifrs-full:RevenueFromContractsWithCustomers, that nothing mapped, so gross profit
+  followed the restatement while revenue could not, and the gap was the two vintages
+  mixed. Mapping the tag closed it, and the warning is gone. See section 13.
 - Workday at 2012-01-31: the untagged pre-IPO preferred stock.
 - Intuit, four company years: its own quarterly figures sum to between 20 and 59
   million away from its annual figure, on restatement free years. A disagreement

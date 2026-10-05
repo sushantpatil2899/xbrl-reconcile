@@ -19,7 +19,7 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ["gross_profit", "operating_expenses", "total_liabilities"]
+                values: ["gross_profit", "operating_expenses", "operating_income", "total_liabilities"]
       - name: value
         tests: [not_null]
       - name: originally_reported_value
