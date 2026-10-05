@@ -247,6 +247,21 @@ company_overrides:
       IFRS 15 form, so these two years had no revenue at all. 1,210.127 and 1,614.173
       respectively. Its 2021 move to US GAAP needs no override.
 
+  - cik: 1327811
+    concept: operating_expenses
+    ignore: ["us-gaap:OperatingExpenses"]
+    note: >
+      Workday uses this tag for a different concept than everyone else, and its own
+      presentation label says so: it reads "Total costs and expenses" on Workday's
+      income statement and "Total operating expenses" on Adobe's, Autodesk's,
+      Salesforce's and every other filer's. Workday's figure therefore includes cost
+      of revenue, which this concept excludes, so it overstated operating expenses by
+      exactly the cost of revenue in all 13 annual years and 92 published values.
+      Ignoring the tag leaves the value to be derived from revenue less cost of
+      revenue less operating income. That covers 70 of the 92; the other 22 are
+      periods where cost of revenue is itself missing, and they become gaps, which is
+      the honest outcome because the published figures were wrong.
+
   - cik: 1353283
     concept: net_income
     prefer: ["us-gaap:NetIncomeLossAvailableToCommonStockholdersBasic"]
