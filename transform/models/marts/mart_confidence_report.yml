@@ -55,6 +55,18 @@ models:
           identity_gap: together they separate a wrong mapping from lines that come
           from different filings.
         tests: [not_null]
+      - name: confirmed_lines
+        description: >
+          Lines whose tag the reporting filing's own arithmetic does not contradict.
+        tests: [not_null]
+      - name: contradicted_lines
+        description: >
+          Lines whose reporting filing calls the tag a part of something we also call
+          that concept's total. It does not follow that the figure is wrong: where a
+          company has no noncontrolling interest, the two tags carry the same value.
+          Deliberately not folded into `trust`, because it would flag 24 values that
+          are identical to their alternative.
+        tests: [not_null]
       - name: identity_gap
         description: >
           Assets less liabilities, temporary equity and equity for a balance sheet;

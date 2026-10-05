@@ -94,6 +94,23 @@ models:
           - accepted_values:
               arguments:
                 values: ["10-K", "10-K/A", "10-Q", "10-Q/A", "20-F", "20-F/A"]
+      - name: evidence
+        description: >
+          What the filers' own calculation arithmetic says about the tag behind this
+          number, judged against the filing that reported it.
+
+          confirmed       that filing's arcs do not contradict the mapping
+          contradicted    that filing calls the tag a part of something we also call
+                          this concept's total. Not necessarily a wrong figure
+          unexamined      that filing carries no calculation linkbase, which is true
+                          of most 10-Qs because theirs are not fetched
+          not_applicable  the value has no single source tag: derived, a component
+                          sum, or a recovered dimension total
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["confirmed", "contradicted", "unexamined", "not_applicable"]
       - name: statement_form
         description: The form of the filing this statement was read from.
       - name: was_restated

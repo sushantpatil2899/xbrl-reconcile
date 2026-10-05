@@ -95,6 +95,36 @@ deduplicated as (
 
 ),
 
+{#- Whether the filing that reported a value declares its own tag to be a part of
+    something we also call that concept's total.
+
+    Joined per filing, not per company, and the difference is not cosmetic: asking
+    whether a company ever declared the relationship flags 115 values, while asking
+    whether the filing in hand declares it flags 24. Salesforce had no
+    noncontrolling interest in some years, so StockholdersEquity genuinely was its
+    total equity in those filings, and the same tag was a component in others.
+    Aggregating across a company's filings would publish 91 false accusations. -#}
+contradicted as (
+
+    select distinct
+        accession,
+        child_concept as concept,
+        child_qualified_tag as qualified_tag
+    from {{ ref('int_calculation_arcs') }}
+    where is_same_concept
+
+),
+
+{#- Filings that carry a calculation linkbase at all. Two thirds of published values
+    come from 10-Qs, whose linkbases are deliberately not fetched, so most values are
+    unexamined rather than confirmed. Saying so is the point of the column. -#}
+examined as (
+
+    select distinct accession
+    from {{ ref('int_calculation_arcs') }}
+
+),
+
 {#- The chosen filing's own figure for this line. Matched on period kind rather
     than start date, because one filing can report a quarter and a half ending on
     the same day, and because the start date is the thing being deduplicated. -#}
@@ -160,7 +190,20 @@ select
         else abs(deduplicated.value - as_filed.value_as_filed)
             <= {{ var('restatement_tolerance') }} * greatest(abs(deduplicated.value), 1)
     end as is_coherent,
-    statements.covers_whole_statement as statement_covers_whole
+    statements.covers_whole_statement as statement_covers_whole,
+    -- What the filers' own arithmetic says about the tag behind this number. A
+    -- contradiction is not necessarily a wrong figure: Workday's 24 contradicted
+    -- values are identical to the alternative, because it has no noncontrolling
+    -- interest for the arithmetic to separate.
+    case
+        when deduplicated.confidence = 'derived'
+            or deduplicated.source_tag like '%+%'
+            or deduplicated.source_tag like 'fsds:%'
+            then 'not_applicable'
+        when contradicted.accession is not null then 'contradicted'
+        when examined.accession is not null then 'confirmed'
+        else 'unexamined'
+    end as evidence
 from deduplicated
 join {{ ref('int_periods') }} as periods
     on periods.cik = deduplicated.cik
@@ -178,3 +221,8 @@ left join as_filed
     and as_filed.concept = deduplicated.concept
     and as_filed.period_kind = deduplicated.period_kind
     and as_filed.period_end = deduplicated.period_end
+left join contradicted
+    on contradicted.accession = deduplicated.accession
+    and contradicted.concept = deduplicated.concept
+    and contradicted.qualified_tag = deduplicated.source_tag
+left join examined on examined.accession = deduplicated.accession
