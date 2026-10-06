@@ -3,6 +3,7 @@
 {{ config(
     materialized='incremental',
     incremental_strategy='delete+insert',
+    on_schema_change='sync_all_columns',
     unique_key='quarter'
 ) }}
 

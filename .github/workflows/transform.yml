@@ -9,6 +9,12 @@ on:
     workflows: [ingest]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      full_refresh:
+        description: Rebuild the incremental models from scratch
+        type: boolean
+        required: false
+        default: false
 
 # Two runs would both build a database and overwrite the same key.
 concurrency:
@@ -37,11 +43,14 @@ jobs:
 
       # dbt build runs each model and its tests together, skipping anything
       # downstream of a failure. RAW_ROOT is unset, so models read the bucket.
+      # A full refresh rebuilds the incremental models from the raw layer. Needed
+      # once when a model becomes incremental, and useful for recovering from a bad
+      # build. It re-reads everything, so it is a manual choice rather than a default.
       - name: Build and test models
         working-directory: transform
         run: |
           uv run dbt deps
-          uv run dbt build --profiles-dir .
+          uv run dbt build --profiles-dir . ${{ inputs.full_refresh && '--full-refresh' || '' }}
 
       - name: Publish database
         run: uv run xbrl-publish-warehouse
