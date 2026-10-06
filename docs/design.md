@@ -61,7 +61,7 @@ Verified against SEC data on 2026-09-16.
 | 3 | Mapping and intermediate | Done. 16 canonical concepts, confidence on every value, coverage report |
 | 4 | Data Sets | Done. Dimensional facts and custom tags from SEC's quarterly Data Sets |
 | 5 | Marts and tests | Done. Income statement, balance sheet, cash flow, confidence report, published as Parquet |
-| 6 | Linkbase verification | Parse calculation linkbase to back high confidence mappings |
+| 6 | Linkbase verification | Done. Presentation and calculation linkbases checked against every mapping |
 | 7 | API | FastAPI over the marts |
 | 8 | Optional | Snowflake comparison, LocalStack AWS variant, frontend |
 
@@ -1190,7 +1190,345 @@ four quarter sets disagree; with it, 4.
   the next transform. This is a property of keeping config in the bucket, not an
   accident: the same coupling appeared in Phase 4 and will appear again.
 
-## 13. Open decisions for later phases
+## 13. Phase 6 as built: linkbase verification
+
+Until this phase, confidence meant "a standard tag, used consistently across the
+sector". It was an assertion about our own judgement, and section 10.5 promised that
+Phase 6 would check it against the filings' own arithmetic. That is what this phase
+does, and the result is that the mappings were right: the evidence confirmed them
+rather than overturning them. The one large correction it produced came from the
+other linkbase, the one that had been sitting unread in the raw layer since Phase 4.
+
+### 13.1 The two linkbases
+
+An XBRL filing is not one file. The instance document holds the numbers; separate
+linkbases hold the relationships between tags.
+
+| Linkbase | What it declares | Where it comes from |
+|---|---|---|
+| **presentation** | Which statement each tag appears on, in what order, under what label | **Already landed**: `pre.txt` in the Data Sets, 69 quarters of it |
+| **calculation** | Children sum to a parent, each weighted plus or minus one | EDGAR filing directories. Not in the Data Sets |
+
+Phase 4's ingestion had been landing `pre.txt` since it started and no model read it.
+That was 118,675 rows covering 1,029 filings and 1,878 tags, free, and it turned out
+to carry the single most valuable finding of the phase.
+
+### 13.2 Fetching the calculation linkbases
+
+**Where the list of filings comes from.** `submissions` looks like the obvious source
+and is the wrong one. SEC puts only the most recent thousand filings in that
+response, and Salesforce files about 172 documents a year, so its block covers
+2023-08-23 to 2026-09-23: three years, and **3 of its 18 annual reports**. The
+mappings most in need of evidence are historical. `companyfacts` carries the
+accession and form on every fact, only for filings that reported XBRL, which is 74
+filings for Salesforce and reaches 2010.
+
+**Discovery.** A filing directory's `index.json` lists its files, and the calculation
+linkbase is the one whose name ends `_cal.xml`. Matched on the name, not on the
+`type` field, which reads `text.gif` for every file in that listing including the
+XML. A plan that trusted `type` would have found nothing.
+
+**Results.** 266 annual reports were attempted. **259 landed, 6 carry no calculation
+linkbase at all, and 1 is not served by EDGAR.**
+
+The 6 are not the old filings that were expected to be thin. They are the three most
+recent annual reports of HubSpot and of Box, which is a caution rather than a
+curiosity: the evidence source is disappearing for recent years at some filers,
+while a 2010 Salesforce filing carries 89 arcs across 4 networks.
+
+The 1 is `0001108524-21-000014`, a Salesforce 10-K filed 2021-03-17 that companyfacts
+attributes 555 facts to and whose entire EDGAR directory returns 404. A 404 on a
+filing directory is recorded as permanently unavailable rather than retried monthly,
+counted separately and logged as a warning, so a systematic URL bug would appear as
+259 unavailable rather than silently.
+
+**Parsing.** `xml.etree.ElementTree` from the standard library. A linkbase is XLink:
+each network declares locators naming concepts, then arcs joining two locator labels.
+This is the first time the project derives anything outside dbt, which was a
+deliberate line. The mitigation is that the raw XML is stored as published, so the
+flattened form is always reproducible, and that paid off within a day. See 13.3.
+
+### 13.3 A format version, and why the raw file is kept
+
+Each end of an arc also records the schema its concept is declared in, because that
+is what makes a tag custom, definitionally:
+
+```
+http://xbrl.fasb.org/us-gaap/2017/elts/us-gaap-2017-01-31.xsd#us-gaap_GrossProfit
+crm-20180131.xsd#crm_SomethingCustom
+```
+
+A standard concept is referenced by absolute URL to the taxonomy that defines it. A
+concept the filer invented is referenced relatively, because it is declared in the
+filing's own schema in the same directory. No list of known prefixes is needed, and a
+test asserts the two signals never contradict.
+
+That field was added **after** the 259 filings had landed. `ARCS_FORMAT` is bumped
+when the shape of `arcs.json` changes, and a run re-parses any filing whose stored
+arcs are behind, reading the XML already in the bucket. All 259 were re-parsed in
+about two minutes with **zero requests**. Keeping the raw file as published, rather
+than only its flattened form, is what made that a two minute job instead of a
+re-download.
+
+### 13.4 The direction of an arc, which is the opposite of what it looks like
+
+The parent of a calculation arc is **the line the filer computes**, not the larger
+figure. Salesforce declares:
+
+```
+NetIncomeLoss = ProfitLoss (+1) - NetIncomeLossAttributableToNoncontrollingInterest (-1)
+```
+
+`ProfitLoss` is 69.7 million and `NetIncomeLoss` is 64.5 million for fiscal 2011, so
+the child is larger than the parent. Any rule of the form "prefer the parent because
+it is the total" is wrong about half the time, and the first draft of this phase's
+plan contained exactly that rule.
+
+The rule that survives is narrower: **where two tags mapped to the same concept stand
+in a parent and child relationship, the child is not that concept's total.** Revenue
+being a child of gross profit says nothing, because they are different concepts.
+
+An apparent inconsistency this exposes, which is correct. For equity we take the
+figure including noncontrolling interests; for net income the figure excluding them.
+Balance sheet equity must include them or it will not balance against total assets,
+which is why GitLab's JiHu joint venture of 45.5 million belongs there. Net income
+for per share purposes excludes them, because those earnings do not belong to common
+stockholders, which is what pairs it with our diluted EPS. Both happen to be the
+calculation parent in their filings, and that is a coincidence of how filers
+structure arithmetic rather than a principle.
+
+### 13.5 Statement networks are not identifiable from role names
+
+A filing carries about a hundred calculation networks and most are footnote detail.
+Role names are the filer's own words: Salesforce wrote
+`ConsolidatedStatementsOfCashFlows`, `StatementOfCashFlowsIndirect` and
+`StatementConsolidatedStatementsOfCashFlows` across three years for the same
+statement.
+
+So nothing pattern matches role names. An arc counts as statement level when both of
+its ends appear on a primary statement according to `pre.txt`, which already
+classifies tags by statement. **20,914 of 45,647 arcs** are statement level by that
+test.
+
+### 13.6 What the evidence settled
+
+`mart_calculation_evidence` holds one row per company, concept and candidate tag,
+including the tags that lost a disagreement, because those are half of the question.
+
+| Verdict | Rows |
+|---|---|
+| `confirmed_total` | **537** |
+| `component_of_same_concept` | **5** |
+| `no_arcs` | 0 |
+
+All five contradictions are on the tag the config **rejected**:
+
+| Companies | Concept | Tag the filer calls a component | Config prefers |
+|---|---|---|---|
+| CrowdStrike, Workday | net_income | `ProfitLoss` | `NetIncomeLoss` |
+| Salesforce, CrowdStrike, Snowflake | total_equity | `StockholdersEquity` | the including NCI variant |
+
+**The acceptance test.** Five tags are excluded from config by hand, each found in
+Phase 3 by noticing a total that was too small or too large. Every one should be
+visible in the filings' own arithmetic standing in a relationship to a line we map,
+and if the engine cannot show that, it does not work. It is a dbt test rather than a
+check run once, and it passes.
+
+Its first version only looked one way, requiring each excluded tag to be an input to
+a mapped line, and reported one failure.
+`us-gaap:LiabilitiesAndStockholdersEquity` is a **root**: Autodesk computes it from
+nine children, one of them `StockholdersEquity`, and it is an input to nothing at
+all. The evidence that justifies excluding it runs in the other direction, so the
+test now checks both. The acceptance test caught a flaw in itself, which is the best
+thing it could have done.
+
+### 13.7 Evidence beside confidence, joined per filing
+
+`mart_financials` carries an `evidence` column, and the grain of its join is the
+whole design.
+
+Asking whether a company's linkbase has **ever** called a tag a component flags 115
+published values. Asking whether **the filing that reported the number** calls it
+one flags **24**. The 91 value gap is 75 values from 10-Qs, whose linkbases are not
+fetched, and 16 from 10-Ks whose own arcs do not contain the relationship. Salesforce
+had no noncontrolling interest in some years, so `StockholdersEquity` genuinely was
+its total equity in those filings; the same tag was a component in others, exactly as
+`SalesRevenueServicesNet` was a component for Salesforce in 2010 and the total in
+2018. Aggregating across a company's filings would have published 91 false
+accusations.
+
+| `evidence` | Values |
+|---|---|
+| `unexamined`, the filing carries no linkbase | 16,817 |
+| **`confirmed`** | **5,818** |
+| `not_applicable`, no single source tag | 2,675 |
+| `contradicted` | 24 |
+
+**Only 23 percent of published values can be judged**, because two thirds come from
+10-Qs. That was a deliberate cost decision and it caps what the phase can conclude.
+
+Evidence and confidence turn out to answer different questions, which is the clearest
+justification for the column: **463 values labelled only medium are confirmed by the
+filer's own arithmetic, and 15,709 labelled high have no arithmetic behind them.**
+
+The 24 contradicted values are Workday quarterly net income taken from `ProfitLoss`,
+and all 24 are identical to the alternative to the dollar, because Workday has no
+noncontrolling interest for the arithmetic to separate. A structural contradiction
+with no numerical consequence, so `contradicted` is deliberately **not** folded into
+the `trust` label; it is counted beside it.
+
+### 13.8 What the presentation linkbase found that no arithmetic could
+
+The largest correction in the project came from one label.
+
+**Workday's operating expenses were overstated by exactly its cost of revenue, in 92
+published values across 13 annual years.**
+
+| Company | Label for `us-gaap:OperatingExpenses` |
+|---|---|
+| **Workday** | **"Total costs and expenses"** |
+| Adobe, Autodesk, Box, Salesforce, CrowdStrike, Datadog, DocuSign, Elastic, Figma | "Total operating expenses" |
+
+Workday alone uses that tag for a different concept, and says so in its own label.
+This concept excludes cost of revenue, which is what the derivation and the
+consistency test both assume, so the tag should not be used for Workday at all.
+
+**The test that exists to catch this could not see it.**
+`consistency_operating_income` required gross profit, operating expenses and
+operating income all to be reported. Workday never tags gross profit, so its gross
+profit is always derived, so Workday was excluded from the test for all 13 of the
+years in which it was wrong. The test now distinguishes the three positions:
+operating expenses must be reported because it is what is under suspicion, operating
+income must be reported or it may have been derived from the very subtraction being
+checked, and gross profit may be derived because deriving it from reported revenue
+and cost makes the comparison sharper rather than circular.
+
+Verified by compiling the widened test and running it against the data from before
+the fix: **69 failures, all Workday, and 0 after.** A passing test after a fix is
+indistinguishable from a broken test until that is done.
+
+An `ignore` override leaves the value to be derived. 70 of the 92 become correct
+derived values; the other 22 become gaps, because cost of revenue is itself missing
+for 2014 to 2016. Trading 22 wrong numbers for 22 honest gaps is the project's own
+principle, though it makes coverage look worse.
+
+### 13.9 What the evidence changed, and what it did not
+
+Four bounded company overrides and one new tag closed six coverage gaps, and the
+bounds matter more than the overrides. Salesforce's `CostOfServices` changes role
+mid history:
+
+| Filing year | `CostOfServices` is a child of | Meaning |
+|---|---|---|
+| 2010 to 2013 | `CostOfRevenue` | a component |
+| 2015 to 2018 | `GrossProfit` | the cost line itself |
+
+The gaps were fiscal 2015 and 2016, filed inside that second window, so the override
+runs `from_year: 2015` to `through_year: 2016`. Unbounded, it would have corrupted
+2010 to 2013, which already publish correctly from `CostOfRevenue`. This is the first
+time the project has evidence rather than judgement for where a year bound belongs.
+
+| Company | Concept | Years | Tag | Value |
+|---|---|---|---|---|
+| Salesforce | cost_of_revenue | 2015, 2016 | `us-gaap:CostOfServices` | 1,289.3 / 1,654.5 |
+| Okta | cost_of_revenue | 2016 | `us-gaap:CostOfServices` | 36.0 |
+| Okta | revenue | 2016 | `us-gaap:SalesRevenueServicesNet` | 85.9 |
+| Atlassian | revenue | 2019, 2020 | `ifrs-full:RevenueFromContractsWithCustomers` | 1,210.1 / 1,614.2 |
+
+Every one comes back `evidence = confirmed`, so the arithmetic does not contradict
+the overrides the evidence suggested.
+
+**The Atlassian gross profit warning, and a wrong explanation corrected.** That
+warning was attributed, repeatedly, to IFRS classifying costs elsewhere. It was a
+restatement our mapping could not follow. Atlassian restated 2017 and 2018 under
+IFRS 15 in its 2019 20-F:
+
+| Vintage | Revenue | Cost | Gross profit | Internally consistent |
+|---|---|---|---|---|
+| 2018 20-F | 619.936 | 119.161 | 500.775 | yes |
+| 2019 20-F, restated | **626.684** | 119.161 | **507.523** | yes |
+
+Both are correct. The pipeline took the restated gross profit, because latest filed
+wins, and the unrestated revenue, because the restated revenue tag was unmapped. The
+6.748 million gap was two vintages mixed. The general lesson is stronger than the
+specific fix: **an unmapped tag does not only create a gap, it can freeze one line at
+a superseded value while the rest of its statement moves on.**
+
+**A reverse identity.** Operating expenses were derived from operating income but not
+the other way round. HubSpot's 2012 had a reported gross profit of 34.766 and
+operating expenses of 53.506 with the line between them empty.
+
+**A scale check, not an EPS identity.** Net income should be about diluted EPS times
+diluted shares. As an identity it is useless: it legitimately fails for pre IPO
+companies, whose EPS is computed on income attributable to common stockholders after
+preferred accretion, and Figma's 2023 misses by 464 times the rounding allowance
+without being wrong. Formulated as a **scale** check, with the tolerance scaled by
+shares rather than by net income and a threshold of three orders of magnitude, it
+isolates exactly six values and 500, 1000 and 5000 all give the same six. HubSpot
+tagged its 2014 interim share counts in thousands while tagging the annual in units,
+and Box did the same for its 2021 annual. The test reports them; correcting a filer's
+units needs a per company scale mechanism the config does not have.
+
+### 13.10 Measured results
+
+Production run 37359104397, 2026-10-05: **367 dbt nodes, 364 pass, 3 warn, 0
+errors**, and 169 Python tests.
+
+| | |
+|---|---|
+| Calculation linkbases landed | 259 of 266 attempted |
+| Arcs | **45,647** across 2,244 networks |
+| Statement level arcs | 20,914 |
+| Presentation rows | 118,675 across 1,029 filings |
+| Published values | 25,334 |
+| Coverage: missing cells | **12** of 5,056 |
+
+The presentation candidate worklist shrank from 8 rows to 2 as the real candidates
+were acted on. The two that remain are `us-gaap:CostsAndExpenses` for Intuit and
+Workday, which is the noise the two condition rule was always going to leave: a
+genuine total of something that is not one of our concepts.
+
+Three standing warnings, all explained:
+
+- Workday at 2012-01-31: pre IPO redeemable preferred stock that Workday never
+  tagged, so the 170.9 million is absent from the source data.
+- Intuit, four company years: its own quarterly figures sum to between 20 and 59
+  million away from its annual figure, on restatement free years.
+- Six diluted share counts tagged in thousands, per 13.9.
+
+**Still open, both explained rather than outstanding.** Intuit's fiscal 2026 cost of
+revenue, gross profit and operating expenses: its 10-K landed 2026-09-09 and tagged
+no cost of revenue at all, and the Data Set quarter containing that filing is not
+published yet, so these three should self heal. Workday's 2014 to 2016 cost of
+revenue, gross profit and operating expenses: it reported two components with no
+total, and one component is a custom tag that companyfacts drops entirely. Summing
+them means giving the mapping layer a second fact source, with its own period
+vocabulary, duplicate shapes and precedence rules against companyfacts. That is the
+shape of `int_fsds_dimension_totals`, which needed six safeguards and still produced
+the Autodesk bug, so it is a phase rather than a config edit.
+
+### 13.11 Traps found while building
+
+- **`true and null` is null.** `is_same_concept` came out null for 172 arcs whose
+  child is unmapped, and a three valued flag would have dropped those arcs from every
+  filter silently. Wrapped in `coalesce`.
+- **A test fixture that did not match reality.** The linkbase fixture used relative
+  hrefs for standard concepts, which no real filing does, so under the custom rule
+  every concept in it looked like the filer's own. The new rule failed against the
+  fixture rather than the data.
+- **Jinja takes no `#` comments inside a `{% set %}` block.**
+- **A new derived concept must be declared.** Adding the reverse operating income
+  identity failed the `accepted_values` test on `int_facts_derived.concept`, which is
+  that test working.
+- **A measurement on the wrong grain over-flags by five times.** Company level
+  evidence against filing level evidence: 115 against 24.
+- **A passing test after a fix proves nothing** until it is run against the data that
+  contained the error.
+- **Backblaze's free tier allows 1 GB of downloads a day**, and five transform runs in
+  an afternoon exceeded it, because every run re-reads the whole raw layer. Only
+  `stg_sec_facts` is incremental. See section 14.
+
+## 14. Open decisions for later phases
 
 Phase 3 (mapping)
 - Initial canonical concept list (about 15).
@@ -1226,8 +1564,40 @@ Left open by Phase 5, in rough order of value:
   or a grouping header. These would need a separate `config/statements.yml`; the
   concept order in `config/tag_mappings.yml` was enough without one.
 
-Phase 6 (linkbase)
-- Which filings to parse (for example latest 10-K per company).
+Phase 6 (linkbase): built, see section 13. Every annual report was parsed rather
+than the latest per company, because the mappings needing evidence are historical.
+
+Left open by Phase 6, in rough order of value:
+
+- **Incremental staging over the landed raw layer.** Every transform run re-reads
+  the whole raw layer, because `stg_fsds_facts`, `stg_fsds_tags`,
+  `stg_fsds_submissions`, `stg_fsds_presentation` and `stg_calculation_arcs` are
+  tables that rebuild from scratch. Only `stg_sec_facts` is incremental. That is 69
+  Data Set quarters and 259 linkbases downloaded per run, and five runs in one
+  afternoon exceeded Backblaze's free 1 GB daily download allowance. A landed quarter
+  never changes and a filing is immutable, so all five could be incremental on the
+  quarter or accession they read, which would cut a run's downloads to almost
+  nothing. This is the same argument that justified the incremental logic in Phase 2
+  and is arguably worth more than anything left in Phase 6.
+- **Per concept `label_hints` in config.** Declaring the labels a concept expects
+  would let the engine question mappings it already has. This was deferred during
+  Phase 6 on the grounds that reading an eight row candidate list costs less than
+  maintaining a heuristic, which was true for candidate detection and wrong for the
+  larger case: Workday's operating expenses were overstated in 92 values because it
+  labels `us-gaap:OperatingExpenses` "Total costs and expenses" while every other
+  filer labels it "Total operating expenses". A declared expectation would have
+  caught that automatically rather than by investigation. See 13.8.
+- **Fetching 10-Q calculation linkbases.** Two thirds of published values come from
+  10-Qs, so only 23 percent of values can currently be judged. This would roughly
+  triple coverage at roughly triple the requests.
+- **A per company scale override.** Six diluted share counts are tagged in thousands
+  by filers who tag the annual in units. The scale check reports them; nothing can
+  correct them, because config has no notion of a unit multiplier.
+- **Custom tags in the mapping layer.** What Workday's six remaining gaps need, per
+  13.10.
+- **Recovering the schema href authoritatively for older runs.** Already done by the
+  format bump, and recorded here only because the mechanism generalises: any future
+  change to the parsed shape is a version bump and a re-parse, with no refetch.
 
 Phase 7 (API)
 - Hosting: local only, or a student credit host. Not a dependency of the pipeline.

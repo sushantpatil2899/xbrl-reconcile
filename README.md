@@ -31,6 +31,12 @@ Measured across the 28 companies in this project:
   drops every dimensional fact. Recovering them needs SEC's quarterly Financial
   Statement Data Sets, where 131,908 of 395,773 facts carry a dimension.
 
+- **The same standard tag can mean different things to different filers.** Workday
+  labels `us-gaap:OperatingExpenses` "Total costs and expenses" on its own income
+  statement; every other company here labels it "Total operating expenses". Workday's
+  figure therefore includes cost of revenue and the others' do not, so reading that
+  tag the same way for all of them overstated Workday's operating expenses by exactly
+  its cost of revenue, in 92 published values across 13 years.
 - **Not every filing that carries XBRL is a financial report.** Proxy statements
   tag net income in their pay versus performance table, often in millions and
   sometimes against the wrong year. A proxy is filed after the 10-K, so a naive
@@ -51,13 +57,20 @@ Resolving that is what this project does.
 | 3. Mapping | Built | Maps raw tags to canonical concepts with confidence levels |
 | 4. Data Sets | Built | Dimensional facts and custom tags from SEC's quarterly Data Sets |
 | 5. Marts | Built | Comparable income statement, balance sheet, cash flow, confidence report |
-| 6. Linkbase | Planned | Parse filing calculation linkbases to back high confidence mappings |
+| 6. Linkbase | Built | Checks every mapping against the filings' own declared arithmetic |
 | 7. API | Planned | FastAPI over the marts |
 
-Running today: three scheduled workflows, 293 dbt nodes and 143 Python tests,
+Running today: four scheduled workflows, 367 dbt nodes and 169 Python tests,
 408,213 facts from the JSON API plus 395,773 from the quarterly Data Sets, 16
-canonical concepts with a confidence level on every value, and **25,326 published
+canonical concepts with a confidence level on every value, and **25,334 published
 figures** across 4,900 financial statements, at zero infrastructure cost.
+
+Every mapping is also checked against the filings' own declared arithmetic, from
+**45,647 calculation relationships** parsed out of 259 annual reports. That is what
+separates "a standard tag used consistently across the sector" from "the company's
+own statement says so": 463 values labelled only *medium* are confirmed by the
+filer's arithmetic, and 15,709 labelled *high* have no arithmetic behind them at
+all.
 
 The marts are published as Parquet: **1.15 MB for all eight**, against a 57 MB
 database, so reading an income statement costs 101 KB and needs no warehouse.
@@ -131,6 +144,14 @@ everything else:
 - **Statement layouts come from config.** The order concepts appear in
   `config/tag_mappings.yml` is the order they appear on the statement, and the
   columns are generated from it, so reordering a statement is a config edit.
+- **Evidence sits beside confidence rather than replacing it.** Confidence is a
+  declared judgement about a mapping; evidence is what the filing's own arithmetic
+  says. They disagree often enough to be worth separating, and a parser silently
+  rewriting what a published number claims about itself would defeat the point.
+- **Evidence is judged per filing, never per company.** A tag can be a total in one
+  year and a component in the next for the same filer. Asking whether a company ever
+  declared a relationship flags 115 values; asking whether the filing that reported
+  the number declares it flags 24.
 
 ## Running it
 
@@ -190,7 +211,7 @@ config/companies.yml        the 28 companies, date range, which forms count
 src/xbrl_reconcile/
   config.py                 load and validate config
   mappings.py               load and validate the tag mapping config
-  ingest/                   polite HTTP client, SEC endpoints, storage, run loop
+  ingest/                   polite HTTP client, SEC endpoints, linkbases, storage, run loop
   warehouse.py              fetch and publish the built database
   publish_marts.py          export the marts as Parquet
 transform/
@@ -200,7 +221,7 @@ transform/
   macros/                   snapshot selection, statement columns built from config
   tests/                    freshness, accounting identities, mart round trips
 infra/terraform/            bucket, scoped key, Actions secrets and variables
-.github/workflows/          ci, ingest, transform
+.github/workflows/          ci, ingest, ingest-datasets, ingest-linkbase, transform
 docs/design.md              decisions and the reasoning behind them
 ```
 
