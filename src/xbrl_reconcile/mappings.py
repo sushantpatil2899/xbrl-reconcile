@@ -24,6 +24,7 @@ OVERRIDE_KEYS = {
     "concept",
     "prefer",
     "ignore",
+    "sum",
     "confidence",
     "from_year",
     "through_year",
@@ -95,6 +96,11 @@ class CompanyOverride:
     concept: str
     prefer: tuple[str, ...] = ()
     ignore: tuple[str, ...] = ()
+    # Tags to add together when a company reports a concept as parts with no total.
+    # Scoped to one company deliberately: a custom tag name is not unique, and
+    # CostOfRevenueSubscriptionAndSupport is used by two of these filers for
+    # different things. A global component set would sum the wrong company's parts.
+    sum: tuple[str, ...] = ()
     confidence: str = DEFAULT_OVERRIDE_CONFIDENCE
     from_year: int | None = None
     through_year: int | None = None
@@ -165,7 +171,7 @@ class MappingConfig:
         """One row per override and tag. Flat rows are far easier to join in SQL."""
         rows = []
         for override in self.overrides:
-            for mode in ("prefer", "ignore"):
+            for mode in ("prefer", "ignore", "sum"):
                 for position, qualified in enumerate(getattr(override, mode), start=1):
                     taxonomy, tag = qualified.split(":", 1)
                     rows.append(
@@ -383,9 +389,14 @@ def _parse_override(raw: dict, concepts: dict[str, ConceptSpec], index: int) -> 
 
     prefer = tuple(str(t) for t in raw.get("prefer") or ())
     ignore = tuple(str(t) for t in raw.get("ignore") or ())
-    if not prefer and not ignore:
-        raise ConfigError(f"{label}: needs at least one of 'prefer' or 'ignore'")
-    for qualified in prefer + ignore:
+    summed = tuple(str(t) for t in raw.get("sum") or ())
+    if not prefer and not ignore and not summed:
+        raise ConfigError(f"{label}: needs at least one of 'prefer', 'ignore' or 'sum'")
+    if summed and len(summed) < 2:
+        raise ConfigError(f"{label}: a sum needs at least two tags, got {len(summed)}")
+    if len(set(summed)) != len(summed):
+        raise ConfigError(f"{label}: a sum lists the same tag twice")
+    for qualified in prefer + ignore + summed:
         _split_qualified_tag(qualified, label)
 
     confidence = str(raw.get("confidence", DEFAULT_OVERRIDE_CONFIDENCE))
@@ -405,6 +416,7 @@ def _parse_override(raw: dict, concepts: dict[str, ConceptSpec], index: int) -> 
         concept=concept,
         prefer=prefer,
         ignore=ignore,
+        sum=summed,
         confidence=confidence,
         from_year=from_year,
         through_year=through_year,

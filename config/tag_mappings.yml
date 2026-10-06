@@ -248,6 +248,26 @@ company_overrides:
       respectively. Its 2021 move to US GAAP needs no override.
 
   - cik: 1327811
+    concept: cost_of_revenue
+    sum:
+      - "custom:CostOfRevenueSubscriptionAndSupport"
+      - "us-gaap:TechnologyServicesCosts"
+    confidence: medium
+    from_year: 2014
+    through_year: 2016
+    note: >
+      Workday reported cost of revenue as two lines with no total for these years,
+      labelled "Costs of subscription services" and "Costs of professional services"
+      on its own income statement. One of the two is a custom tag, which the
+      companyfacts API drops entirely, so the pair is summed from the Data Sets.
+      The evidence is unusually strong: the same pair reproduces the published total
+      exactly in four other years, by two unrelated mechanisms. 2012 and 2013 sum to
+      65.368 and 116.535, which is what Workday tagged as CostOfRevenue, and 2017 and
+      2018 sum to 483.545 and 629.413, which is what the dimension recovery produces.
+      Those four bracket the three gap years on both sides. Bounded to 2014 to 2016
+      because a reported total exists outside that window and should win.
+
+  - cik: 1327811
     concept: operating_expenses
     ignore: ["us-gaap:OperatingExpenses"]
     note: >

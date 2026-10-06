@@ -265,6 +265,36 @@ recovered_totals as (
 
 ),
 
+{#- Totals summed from parts where one part is a custom tag, which companyfacts
+    drops. Ranked last of all, behind every reported total, every component sum from
+    companyfacts and every dimension recovery, because it is the weakest claim: parts
+    added together from a source that exists precisely because the primary one is
+    incomplete. Precedence between the two Data Set derived sources is stated here
+    rather than left to fall out of the numbers. -#}
+summed_parts as (
+
+    select
+        totals.cik,
+        totals.ticker,
+        totals.concept,
+        specs.statement,
+        totals.period_start,
+        totals.period_end,
+        totals.period_kind,
+        totals.unit,
+        totals.value,
+        'fsds:' || totals.source_tag as source_tag,
+        totals.confidence as configured_confidence,
+        'us_gaap' as basis,
+        totals.accession,
+        totals.form,
+        totals.filed_date,
+        3000 as effective_priority
+    from {{ ref('int_fsds_component_totals') }} totals
+    join concept_specs specs on specs.concept = totals.concept
+
+),
+
 all_candidates as (
 
     select * from deduplicated
@@ -272,6 +302,8 @@ all_candidates as (
     select * from usable_sums
     union all
     select * from recovered_totals
+    union all
+    select * from summed_parts
 
 ),
 

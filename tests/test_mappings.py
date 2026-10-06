@@ -459,6 +459,51 @@ def test_position_is_carried_into_the_snapshot_rows():
     assert {row["position"] for row in rows} == {1}
 
 
+def test_an_override_can_sum_parts_a_company_reports_without_a_total():
+    """One part may be a custom tag, which companyfacts drops, so the sum is scoped
+    to one company: a custom tag name is not unique across filers."""
+    overrides = [
+        {
+            "cik": 1327811,
+            "concept": "revenue",
+            "sum": ["custom:SubscriptionRevenues", "us-gaap:TechnologyServicesRevenue"],
+            "confidence": "medium",
+            "from_year": 2014,
+            "through_year": 2016,
+        }
+    ]
+    config = parse_mappings(make_config(overrides=overrides))
+    override = config.overrides[0]
+
+    assert override.sum == ("custom:SubscriptionRevenues", "us-gaap:TechnologyServicesRevenue")
+    assert (override.from_year, override.through_year) == (2014, 2016)
+
+    rows = [row for row in config.override_rows() if row["mode"] == "sum"]
+    assert [(row["taxonomy"], row["position"]) for row in rows] == [
+        ("custom", 10),
+        ("us-gaap", 20),
+    ]
+
+
+def test_a_sum_of_one_tag_is_rejected():
+    """A single tag is a prefer, not a sum, and summing one part hides the mistake."""
+    overrides = [{"cik": 1327811, "concept": "revenue", "sum": ["custom:Only"]}]
+    with pytest.raises(ConfigError, match="needs at least two tags"):
+        parse_mappings(make_config(overrides=overrides))
+
+
+def test_a_sum_listing_the_same_tag_twice_is_rejected():
+    """It would double count, which is the error the whole mechanism exists to avoid."""
+    overrides = [{"cik": 1327811, "concept": "revenue", "sum": ["custom:A", "custom:A"]}]
+    with pytest.raises(ConfigError, match="same tag twice"):
+        parse_mappings(make_config(overrides=overrides))
+
+
+def test_an_override_still_needs_to_do_something():
+    with pytest.raises(ConfigError, match="'prefer', 'ignore' or 'sum'"):
+        parse_mappings(make_config(overrides=[{"cik": 1327811, "concept": "revenue"}]))
+
+
 def test_a_flag_written_as_text_is_rejected_rather_than_read_as_true():
     """A quoted "false" is a non empty string, so bool() would read it as true."""
     for flag in ("additive", "optional"):

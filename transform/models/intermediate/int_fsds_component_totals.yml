@@ -1,0 +1,54 @@
+version: 2
+
+models:
+  - name: int_fsds_component_totals
+    description: >
+      Totals summed from the parts a company reports with no total of its own, where
+      at least one part is a custom tag that SEC's companyfacts API drops. Scoped to
+      one company by the override that declares the sum, because a custom tag name is
+      not unique across filers.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cik, concept, period_start, period_end, period_kind, unit]
+    columns:
+      - name: cik
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_companies')
+                field: cik
+      - name: concept
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_tag_mappings')
+                field: concept
+      - name: period_start
+        description: >
+          Recovered by matching a period this company already reports of the same
+          length ending on the same date. Data Set facts carry no start date, and a
+          duration without one would collide in the period spine with the instants.
+        tests: [not_null]
+      - name: period_end
+        tests: [not_null]
+      - name: value
+        tests: [not_null]
+      - name: parts_present
+        description: >
+          How many of the named parts were found. A row only exists where this equals
+          the number the override names, because a sum missing a part understates the
+          total.
+        tests: [not_null]
+      - name: source_tag
+        description: The parts joined, so a published value says what it was added from.
+        tests: [not_null]
+      - name: confidence
+        description: Never high. A sum assembled from parts is weaker than a reported total.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["medium", "low"]
