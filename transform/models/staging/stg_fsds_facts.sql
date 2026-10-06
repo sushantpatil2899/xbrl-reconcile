@@ -13,9 +13,34 @@
   any total. That is the safety mechanism the dimension summing relies on.
 #}
 
+{{ config(
+    materialized='incremental',
+    incremental_strategy='delete+insert',
+    unique_key='quarter'
+) }}
+
+{#- Every ref below sits inside the conditional branch, where dbt cannot see it
+    while parsing. These hints declare them explicitly. -#}
+-- depends_on: {{ ref('stg_fsds_quarters') }}
+-- depends_on: {{ ref('stg_fsds_submissions') }}
+-- depends_on: {{ ref('stg_fsds_tags') }}
+
+{#- What is still to read. Anything already stored at the version the ingestion
+    job recorded is skipped, so a run with nothing new reads no raw files at all. -#}
+{% set files_to_read = landed_quarters('num', exclude_processed=is_incremental()) %}
+
+{% if files_to_read == '[]' %}
+
+{#- Nothing to read. Selecting the existing table's shape with no rows leaves it
+    untouched, which is what a quiet day should cost. -#}
+select * from {{ this }} where false
+
+{% else %}
+
 with raw_facts as (
 
     select
+        regexp_extract(n.filename, 'fsds/([0-9]{4}q[1-4])/', 1) as quarter,
         n.adsh as accession,
         n.tag,
         n.version as declared_version,
@@ -26,10 +51,11 @@ with raw_facts as (
         nullif(n.coreg, '') as coregistrant,
         try_cast(n.value as double) as value
     from read_csv(
-        {{ landed_quarters('num') }},
+        {{ files_to_read }},
         delim = '\t',
         header = true,
         quote = '',
+        filename = true,
         all_varchar = true
     ) n
 
@@ -47,6 +73,8 @@ with_dimensions as (
 )
 
 select
+    f.quarter,
+    state.landed_at,
     f.accession,
     s.cik,
     s.ticker,
@@ -80,6 +108,9 @@ select
     f.coregistrant
 from with_dimensions f
 join {{ ref('stg_fsds_submissions') }} s on s.accession = f.accession
+join {{ ref('stg_fsds_quarters') }} state on state.quarter = f.quarter
 left join {{ ref('stg_fsds_tags') }} t
     on t.tag = f.tag and t.declared_version = f.declared_version
 where f.value is not null
+
+{% endif %}

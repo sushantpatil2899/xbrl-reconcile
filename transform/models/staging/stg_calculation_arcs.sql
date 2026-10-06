@@ -27,6 +27,28 @@
   which statement a tag appears on.
 #}
 
+{{ config(
+    materialized='incremental',
+    incremental_strategy='delete+insert',
+    unique_key='accession'
+) }}
+
+{#- Every ref below sits inside the conditional branch, where dbt cannot see it
+    while parsing. These hints declare them explicitly. -#}
+-- depends_on: {{ ref('stg_linkbase_filings') }}
+-- depends_on: {{ ref('stg_companies') }}
+
+{#- What is still to read. A filing is immutable, so the only reason to read one
+    again is a re-parse, which the state file records. 259 files on the first run,
+    none on a quiet one. -#}
+{% set files_to_read = landed_linkbases(exclude_processed=is_incremental()) %}
+
+{% if files_to_read == '[]' %}
+
+select * from {{ this }} where false
+
+{% else %}
+
 with arcs as (
 
     select
@@ -41,7 +63,7 @@ with arcs as (
         try_cast(a."order" as double) as arc_order,
         a.filename as source_file
     from read_json(
-        {{ landed_linkbases() }},
+        {{ files_to_read }},
         columns = {
             role: 'VARCHAR',
             parent: 'VARCHAR',
@@ -59,6 +81,7 @@ with arcs as (
 
 select
     arcs.accession,
+    state.parsed_at,
     companies.cik,
     companies.ticker,
     arcs.role,
@@ -93,3 +116,6 @@ select
     arcs.source_file
 from arcs
 join {{ ref('stg_companies') }} as companies on companies.cik10 = arcs.cik10
+join {{ ref('stg_linkbase_filings') }} as state on state.accession = arcs.accession
+
+{% endif %}

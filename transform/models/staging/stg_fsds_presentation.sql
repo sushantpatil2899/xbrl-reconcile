@@ -26,6 +26,30 @@
   being forced into one of ours.
 #}
 
+{{ config(
+    materialized='incremental',
+    incremental_strategy='delete+insert',
+    unique_key='quarter'
+) }}
+
+{#- Every ref below sits inside the conditional branch, where dbt cannot see it
+    while parsing. These hints declare them explicitly. -#}
+-- depends_on: {{ ref('stg_fsds_quarters') }}
+-- depends_on: {{ ref('stg_fsds_submissions') }}
+-- depends_on: {{ ref('stg_fsds_tags') }}
+
+{#- What is still to read. Anything already stored at the version the ingestion
+    job recorded is skipped, so a run with nothing new reads no raw files at all. -#}
+{% set files_to_read = landed_quarters('pre', exclude_processed=is_incremental()) %}
+
+{% if files_to_read == '[]' %}
+
+{#- Nothing to read. Selecting the existing table's shape with no rows leaves it
+    untouched, which is what a quiet day should cost. -#}
+select * from {{ this }} where false
+
+{% else %}
+
 with lines as (
 
     select
@@ -40,7 +64,7 @@ with lines as (
         p.negating = '1' as is_negated,
         regexp_extract(p.filename, 'fsds/([0-9]{4}q[1-4])/', 1) as quarter
     from read_csv(
-        {{ landed_quarters('pre') }},
+        {{ files_to_read }},
         delim = '\t',
         header = true,
         quote = '',
@@ -75,10 +99,14 @@ select
     lines.filer_label,
     lines.is_parenthetical,
     lines.is_negated,
-    lines.quarter
+    lines.quarter,
+    state.landed_at
 from lines
 join {{ ref('stg_fsds_submissions') }} as submissions
     on submissions.accession = lines.accession
+join {{ ref('stg_fsds_quarters') }} as state on state.quarter = lines.quarter
 left join {{ ref('stg_fsds_tags') }} as tags
     on tags.tag = lines.tag
     and tags.declared_version = lines.declared_version
+
+{% endif %}

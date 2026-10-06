@@ -1,0 +1,40 @@
+version: 2
+
+models:
+  - name: stg_fsds_quarters
+    description: >
+      One row per landed Data Set quarter, from the ingestion job's own state. The
+      version marker the incremental staging models compare against, because Data Set
+      files land at a stable path and are overwritten when a quarter is re-landed.
+    columns:
+      - name: quarter
+        tests: [unique, not_null]
+      - name: landed_at
+        description: When the ingestion job last wrote this quarter's files.
+        tests: [not_null]
+      - name: ciks
+        description: >
+          The companies this quarter was filtered for. A quarter is re-landed when the
+          companies it should cover are no longer a subset of this list.
+        tests: [not_null]
+
+  - name: stg_linkbase_filings
+    description: >
+      One row per annual report the linkbase job has looked at, including those with
+      no calculation linkbase and the one EDGAR does not serve.
+    columns:
+      - name: accession
+        tests: [unique, not_null]
+      - name: ticker
+        tests: [not_null]
+      - name: arcs_format
+        description: The shape of the stored arcs. A bump re-parses from the stored XML.
+        tests: [not_null]
+      - name: parsed_at
+        description: >
+          The later of fetched_at and reparsed_at, which is the version marker the
+          arcs model compares against.
+        tests: [not_null]
+      - name: is_unavailable
+        description: EDGAR serves no such filing, so it is recorded rather than retried.
+        tests: [not_null]

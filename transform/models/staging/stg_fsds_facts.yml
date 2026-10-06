@@ -28,11 +28,28 @@ models:
       - name: quarter
         tests: [not_null]
 
+  - name: stg_fsds_tags_by_quarter
+    description: >
+      Tag definitions as each landed quarter declares them, one row per quarter that
+      carried a definition. The per quarter grain is what lets this model be
+      incremental, because it can record which quarters it has read.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [tag, declared_version, quarter]
+    columns:
+      - name: quarter
+        tests: [not_null]
+      - name: landed_at
+        tests: [not_null]
+
   - name: stg_fsds_tags
     description: >
-      Tag definitions from the landed quarters. A custom tag's declared version is
-      the accession number of the filing that declared it, so taxonomy is
-      normalized to `custom` and the raw version kept alongside.
+      Tag definitions at the grain every consumer joins on, one row per tag and
+      declared version, deduplicated from stg_fsds_tags_by_quarter by taking the
+      newest quarter's copy. A custom tag's declared version is the accession number
+      of the filing that declared it, so taxonomy is normalized to `custom` and the
+      raw version kept alongside.
     tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:

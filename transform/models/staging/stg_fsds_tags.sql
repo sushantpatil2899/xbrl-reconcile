@@ -1,24 +1,28 @@
--- Tag definitions from the landed quarters, including the custom flag and the
--- human label. A custom tag's version is the accession number of the filing that
--- declared it, so the same concept appears under a new version every filing. The
--- stable form is custom:<Tag>, scoped to a company by the facts that use it.
-select distinct
-    t.tag,
-    t.version as declared_version,
-    t.custom = '1' as is_custom,
-    case
-        when t.custom = '1' then 'custom'
-        else {{ taxonomy_from_version('t.version') }}
-    end as taxonomy,
-    t.abstract = '1' as is_abstract,
-    t.datatype,
-    t.iord as instant_or_duration,
-    t.crdr as credit_or_debit,
-    t.tlabel as label
-from read_csv(
-    {{ landed_quarters('tag') }},
-    delim = '\t',
-    header = true,
-    quote = '',
-    all_varchar = true
-) t
+{#
+  One row per tag and declared version, which is the grain every consumer joins on.
+
+  A definition for a given version is identical in every quarter that carries it, so
+  the newest quarter's copy is taken and the rest are collapsed. The per quarter rows
+  live in stg_fsds_tags_by_quarter, which is incremental because it can record which
+  quarters it has read; this cannot, because the quarter is not in its grain.
+
+  A view rather than a table: it is a projection of a table that is already stored.
+#}
+
+{{ config(materialized='view') }}
+
+select
+    tag,
+    declared_version,
+    is_custom,
+    taxonomy,
+    is_abstract,
+    datatype,
+    instant_or_duration,
+    credit_or_debit,
+    label
+from {{ ref('stg_fsds_tags_by_quarter') }}
+qualify row_number() over (
+    partition by tag, declared_version
+    order by quarter desc
+) = 1
