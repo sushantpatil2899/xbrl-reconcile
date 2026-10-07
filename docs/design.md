@@ -1528,7 +1528,108 @@ the Autodesk bug, so it is a phase rather than a config edit.
   an afternoon exceeded it, because every run re-reads the whole raw layer. Only
   `stg_sec_facts` is incremental. See section 14.
 
-## 14. Open decisions for later phases
+## 14. Running cost as built
+
+Phases 2 to 6 added layers without anyone asking what a run cost, and the answer
+turned out to be the binding constraint on how often the pipeline could run at all.
+Three pieces of work fixed that, and they are recorded here rather than under a
+phase because none of them changed what the project publishes.
+
+### 14.1 What a run cost, and what it costs now
+
+| Per transform run | Before | After |
+|---|---|---|
+| Raw layer files read | **535** | **0** on a day with nothing new |
+| Warehouse downloaded | 92 MB | **15 MB** |
+| Build and test step | 115s | 25s |
+| Runs within the free daily allowance | about 8 | about 60 |
+
+Backblaze's free tier stopped the pipeline twice in two days, once on the raw layer
+and once on the warehouse fetch, with the same message naming both a bandwidth cap
+and a transaction cap. The read count was the figure growing fastest: 69 Data Set
+quarters times four files, plus 259 calculation linkbases, on every run.
+
+### 14.2 Incremental staging
+
+`stg_sec_facts` had been incremental since Phase 2 and the pattern was simple:
+companyfacts snapshots carry a UTC timestamp in their path, so a processed file can
+be excluded by path forever.
+
+The Data Set and linkbase layers cannot use that pattern, and the reason is a
+principle this project states but does not follow everywhere. Section 7.4 says raw
+snapshots are written once and never overwritten. Data Set files land at a stable
+path, `fsds/2013q3/num.tsv.gz`, and Phase 4's self healing **overwrites** a quarter
+when a company is added whose history it should cover. `arcs.json` is overwritten
+too, as the format bump in 13.3 did for all 259 filings. So a path that has been
+read before may now hold different content, and excluding by path would silently
+serve stale rows for a newly added company.
+
+Versioning those paths would mean re-landing 69 quarters, which is 40 GB pulled from
+SEC, so the ingestion jobs' own state files are the authority instead.
+`stg_fsds_quarters` and `stg_linkbase_filings` expose `landed_at` per quarter and the
+later of `fetched_at` and `reparsed_at` per filing. Five models became incremental
+with `delete+insert` keyed on the quarter or the accession, each storing the version
+marker it was built from, and the glob macros compare the two before deciding what to
+read.
+
+**`stg_fsds_tags` had to be split.** Its grain is one row per tag and declared
+version, deduplicated across quarters, so it had nowhere to record which quarters it
+had read. `stg_fsds_tags_by_quarter` is the incremental ledger at the three column
+grain and `stg_fsds_tags` is now a view over it that dedupes back, so no consumer
+changed and its uniqueness test still applies. That split exists only because an
+incremental model needs a ledger of what it has processed and a deduplicated one
+cannot carry it.
+
+Measured on the five models, same work, same results:
+
+| Model | Full refresh | Incremental |
+|---|---|---|
+| `stg_calculation_arcs` | 91.96s | 1.40s |
+| `stg_fsds_facts` | 49.43s | 0.35s |
+| `stg_fsds_presentation` | 42.59s | 0.29s |
+| `stg_fsds_tags_by_quarter` | 40.70s | 0.39s |
+| `stg_fsds_submissions` | 37.29s | 0.42s |
+
+The transform workflow gained a `full_refresh` input, needed once for the transition
+and useful afterwards for rebuilding from the raw layer.
+
+### 14.3 Compressing the warehouse
+
+With the raw layer costing nothing on a quiet day, the database fetch was the entire
+read cost. A DuckDB file is mostly compressible: 92 MB stores as 15 MB.
+
+Compression level was measured rather than assumed. The default costs 0.8 seconds to
+compress and 0.1 to expand; level 1 saves four tenths of a second for 1.4 MB more,
+and level 9 spends 2.2 seconds to save 0.1 MB.
+
+Whether a stored copy is compressed is decided by reading its first two bytes rather
+than by its name, so the key did not change and the switch needed no migration. Both
+paths ran in production within five minutes of each other: the first run after the
+deploy read the uncompressed copy the previous run had written and published a
+compressed one, and the next read 15.0 MB.
+
+### 14.4 Traps found
+
+- **`depends_on` for every ref moved inside a conditional**, which broke five models
+  at once. The fourth time this trap appeared in the project.
+- **A missing column that presented as a join error.** The exclusion subquery read
+  `max(landed_at)` from the target table, which on the run that first turned a model
+  incremental predates that column. DuckDB resolved the name to an outer table
+  instead, making the subquery correlated, and reported `LATERAL join cannot contain
+  aggregates`. Columns in that subquery are now qualified so a missing one fails as
+  what it is, and the macro checks with `adapter.get_columns_in_relation` whether the
+  stored table can say what it has processed at all.
+- **A local fixture cannot reproduce a schema that only exists in production.** The
+  fixture passed all three scenarios, including a re-landed quarter, and production
+  still failed on the first attempt, because the fixture built its tables fresh with
+  the new columns present.
+- **A log that reports a derived figure instead of the measured one.** After
+  compression the fetch line still printed the size on disk, which is the expanded
+  file and no longer what was transferred. `fetch_warehouse` now returns the bytes
+  downloaded. This was the third time in the same stretch of work that a log said
+  something true and useless.
+
+## 15. Open decisions for later phases
 
 Phase 3 (mapping)
 - Initial canonical concept list (about 15).
@@ -1569,16 +1670,6 @@ than the latest per company, because the mappings needing evidence are historica
 
 Left open by Phase 6, in rough order of value:
 
-- **Incremental staging over the landed raw layer.** Every transform run re-reads
-  the whole raw layer, because `stg_fsds_facts`, `stg_fsds_tags`,
-  `stg_fsds_submissions`, `stg_fsds_presentation` and `stg_calculation_arcs` are
-  tables that rebuild from scratch. Only `stg_sec_facts` is incremental. That is 69
-  Data Set quarters and 259 linkbases downloaded per run, and five runs in one
-  afternoon exceeded Backblaze's free 1 GB daily download allowance. A landed quarter
-  never changes and a filing is immutable, so all five could be incremental on the
-  quarter or accession they read, which would cut a run's downloads to almost
-  nothing. This is the same argument that justified the incremental logic in Phase 2
-  and is arguably worth more than anything left in Phase 6.
 - **Per concept `label_hints` in config.** Declaring the labels a concept expects
   would let the engine question mappings it already has. This was deferred during
   Phase 6 on the grounds that reading an eight row candidate list costs less than
@@ -1593,11 +1684,37 @@ Left open by Phase 6, in rough order of value:
 - **A per company scale override.** Six diluted share counts are tagged in thousands
   by filers who tag the annual in units. The scale check reports them; nothing can
   correct them, because config has no notion of a unit multiplier.
-- **Custom tags in the mapping layer.** What Workday's six remaining gaps need, per
-  13.10.
+- **Custom tags beyond a declared sum.** Workday's six gaps are closed: a third
+  override mode, `sum`, adds named parts from the Data Sets where one part is a
+  custom tag that companyfacts drops, scoped to one company because a custom tag name
+  is not unique. What is still open is the general case. The sum has to be declared
+  per company and per concept, so a filer who reports a concept only as custom parts
+  is found by inspection rather than by the pipeline. `mart_custom_tags` lists 1,092
+  unmapped custom tags; nothing proposes which of them are parts of a total we are
+  missing. The calculation linkbase could: a custom tag whose parent is a concept we
+  map is a declared part of it.
 - **Recovering the schema href authoritatively for older runs.** Already done by the
   format bump, and recorded here only because the mechanism generalises: any future
   change to the parsed shape is a version bump and a re-parse, with no refetch.
+
+Running cost: addressed, see section 14. Incremental staging, warehouse
+compression, and a `full_refresh` switch for rebuilding.
+
+Left open by that work:
+
+- **The never overwritten principle is still violated in two layers.** Section 7.4
+  says raw snapshots are written once; Data Set quarters and `arcs.json` are
+  overwritten in place, which is why the staging models compare against the
+  ingestion jobs' state rather than against file paths. Versioning those paths would
+  cost 40 GB of re-landing from SEC, so it stays as it is, documented rather than
+  fixed.
+- **The `stg_fsds_tags` split is a workaround.** A model whose grain deduplicates
+  across the thing it reads cannot record what it has read, so it is now two models.
+  Any future deduplicating staging model will meet the same wall.
+- **The warehouse fetch is still the whole read cost**, now 15 MB rather than 92.
+  Smaller still would mean publishing only the tables the incremental logic needs to
+  resume rather than the entire database, which is a real option and not obviously
+  worth the complexity.
 
 Phase 7 (API)
 - Hosting: local only, or a student credit host. Not a dependency of the pipeline.

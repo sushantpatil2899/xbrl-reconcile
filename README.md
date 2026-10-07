@@ -113,6 +113,11 @@ Both jobs run in GitHub Actions. Transform starts automatically when ingestion
 finishes. The runner is wiped after each run, so the database is fetched from
 storage, rebuilt, and published back.
 
+A day with no new filings costs **one 15 MB download**: the staging models record
+which Data Set quarter and which filing they have already read, so the raw layer is
+not read again, and the database is stored gzipped. Before that work a run read 535
+files and 92 MB.
+
 ## Design decisions
 
 Full reasoning is in [docs/design.md](docs/design.md). The ones that shape
