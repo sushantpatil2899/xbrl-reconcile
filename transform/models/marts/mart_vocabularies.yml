@@ -1,0 +1,23 @@
+version: 2
+
+models:
+  - name: mart_vocabularies
+    description: >
+      Every value the pipeline can produce, in the order config lists it, with what
+      it means. The API builds each parameter's documentation from this, so the
+      meaning of a value comes from config rather than from prose written twice.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [vocabulary, value]
+    columns:
+      - name: vocabulary
+        tests: [not_null]
+      - name: vocabulary_description
+        tests: [not_null]
+      - name: value
+        tests: [not_null]
+      - name: description
+        tests: [not_null]
+      - name: position
+        tests: [not_null]

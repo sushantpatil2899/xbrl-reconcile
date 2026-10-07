@@ -48,6 +48,6 @@ models:
           no_arcs                    this company has no calculation linkbase at all
         tests:
           - not_null
-          - accepted_values:
+          - declared_in_vocabulary:
               arguments:
-                values: ["confirmed_total", "component_of_same_concept", "no_arcs"]
+                vocabulary: calculation_verdict

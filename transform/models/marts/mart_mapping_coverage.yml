@@ -27,15 +27,9 @@ models:
           there is nothing and something could be done about it.
         tests:
           - not_null
-          - accepted_values:
+          - declared_in_vocabulary:
               arguments:
-                values:
-                  - reported
-                  - derived
-                  - ambiguous
-                  - no_balance_sheet
-                  - not_applicable
-                  - missing
+                vocabulary: coverage_status
 
   - name: mart_unmapped_tags
     description: >

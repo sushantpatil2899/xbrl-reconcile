@@ -1,0 +1,45 @@
+version: 2
+
+models:
+  - name: mart_concepts
+    description: >
+      One row per canonical concept: which statement it belongs to, where it sits on
+      that statement, its unit, and whether its periods can be added. A projection of
+      the mapping config, published so adding a concept changes what the API lists
+      with no code change anywhere.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [concept]
+    columns:
+      - name: concept
+        tests: [not_null]
+      - name: statement
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_tag_mappings')
+                field: statement
+      - name: position
+        description: >
+          Where the concept sits on its statement, from the order config lists the
+          concepts in. Reordering a statement is a config edit.
+        tests: [not_null]
+      - name: unit
+        description: What the values are measured in, which is not money for every concept.
+        tests:
+          - not_null
+          - declared_in_vocabulary:
+              arguments:
+                vocabulary: unit
+      - name: is_additive
+        description: >
+          Whether periods can be added or subtracted. False for a ratio or an
+          average, which is why a fourth quarter cannot be derived for one.
+        tests: [not_null]
+      - name: is_optional
+        description: >
+          Whether a company may legitimately have none of this concept, which is
+          what separates a real gap from an absence in the coverage report.
+        tests: [not_null]

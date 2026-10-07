@@ -1,0 +1,32 @@
+version: 2
+
+models:
+  - name: stg_vocabularies
+    description: >
+      One row per vocabulary and value. The closed sets the pipeline can produce,
+      declared in config so the models can be tested against them and the API can
+      describe every value it accepts without repeating the prose.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [vocabulary, value]
+    columns:
+      - name: vocabulary
+        description: Which set this value belongs to, named after the column that holds it.
+        tests: [not_null]
+      - name: vocabulary_description
+        description: What the set as a whole means.
+        tests: [not_null]
+      - name: value
+        description: The value as it appears in the data.
+        tests: [not_null]
+      - name: description
+        description: >
+          What this value means. Required by the loader, because an undocumented
+          value is the thing this config exists to prevent.
+        tests: [not_null]
+      - name: position
+        description: >
+          Where the value sits in its set, from the order config lists them in, so
+          high before medium before low survives into the documentation.
+        tests: [not_null]

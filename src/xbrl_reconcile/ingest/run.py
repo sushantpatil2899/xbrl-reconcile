@@ -21,6 +21,7 @@ from xbrl_reconcile.ingest.storage import (
     snapshot_key,
 )
 from xbrl_reconcile.mappings import MappingConfig, load_mappings, validate_against_companies
+from xbrl_reconcile.vocabularies import VocabularyConfig, load_vocabularies
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ def run_ingestion(
     storage,
     now: datetime,
     mappings: MappingConfig | None = None,
+    vocabularies: VocabularyConfig | None = None,
 ) -> RunResult:
     run_ts = now.astimezone(UTC).strftime(TIMESTAMP_FORMAT)
 
@@ -88,6 +90,8 @@ def run_ingestion(
     _write_config_snapshot(companies, storage, run_ts)
     if mappings is not None:
         _write_mapping_snapshots(mappings, storage, run_ts)
+    if vocabularies is not None:
+        _write_vocabulary_snapshot(vocabularies, storage, run_ts)
     return result
 
 
@@ -110,11 +114,21 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     companies = load_companies(Path(os.environ.get("CONFIG_PATH", "config/companies.yml")))
     mappings = load_mappings(Path(os.environ.get("MAPPINGS_PATH", "config/tag_mappings.yml")))
+    vocabularies = load_vocabularies(
+        Path(os.environ.get("VOCABULARIES_PATH", "config/vocabularies.yml"))
+    )
     contact = _require(os.environ, "SEC_CONTACT_EMAIL")
     client = PoliteClient(user_agent=f"xbrl-reconcile {contact}")
     storage = build_storage(os.environ)
 
-    result = run_ingestion(companies, SecApi(client), storage, datetime.now(UTC), mappings=mappings)
+    result = run_ingestion(
+        companies,
+        SecApi(client),
+        storage,
+        datetime.now(UTC),
+        mappings=mappings,
+        vocabularies=vocabularies,
+    )
 
     log.info(
         "done: %d downloaded, %d skipped, %d failed",
@@ -160,6 +174,19 @@ def _write_mapping_snapshots(mappings: MappingConfig, storage, run_ts: str) -> N
         ("tag_summable_axes", mappings.summable_axis_rows()),
     ):
         storage.write(config_snapshot_key(name, run_ts), json.dumps(rows, indent=2).encode())
+
+
+def _write_vocabulary_snapshot(vocabularies: VocabularyConfig, storage, run_ts: str) -> None:
+    """Store the vocabularies as data, so the models can be tested against them.
+
+    This config has nothing to do with SEC data, so snapshotting it here means a
+    wording change waits for the next ingest run. That is at most a day, and worth
+    less than a second way of getting config into the bucket.
+    """
+    storage.write(
+        config_snapshot_key("vocabularies", run_ts),
+        json.dumps(vocabularies.rows(), indent=2).encode(),
+    )
 
 
 def _read_state(storage) -> dict:

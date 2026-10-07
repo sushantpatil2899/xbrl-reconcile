@@ -21,9 +21,9 @@ models:
       - name: unit
         tests:
           - not_null
-          - accepted_values:
+          - declared_in_vocabulary:
               arguments:
-                values: ["USD", "USD/shares", "shares"]
+                vocabulary: unit
       - name: position
         description: >
           Where the concept sits on its statement, taken from the order the config
@@ -45,9 +45,9 @@ models:
         description: What the mapping is based on, never a verified fact about the filing.
         tests:
           - not_null
-          - accepted_values:
+          - declared_in_vocabulary:
               arguments:
-                values: ["high", "medium", "low"]
+                vocabulary: mapping_confidence
 
   - name: stg_tag_overrides
     description: Per company exceptions to the global mapping order.
@@ -85,9 +85,9 @@ models:
           wide standard tag.
         tests:
           - not_null
-          - accepted_values:
+          - declared_in_vocabulary:
               arguments:
-                values: ["high", "medium", "low"]
+                vocabulary: mapping_confidence
       - name: taxonomy
         tests: [not_null]
       - name: tag

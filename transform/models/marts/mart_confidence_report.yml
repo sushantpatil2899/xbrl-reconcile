@@ -83,6 +83,6 @@ models:
           reported every line is a standard tag the company filed
         tests:
           - not_null
-          - accepted_values:
+          - declared_in_vocabulary:
               arguments:
-                values: ["reported", "computed", "mapped", "check"]
+                vocabulary: trust

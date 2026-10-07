@@ -41,9 +41,9 @@ models:
       - name: period_kind
         tests:
           - not_null
-          - accepted_values:
+          - declared_in_vocabulary:
               arguments:
-                values: ["instant", "quarter", "half", "nine_month", "annual", "other"]
+                vocabulary: period_kind
       - name: fiscal_year
         description: What the company itself calls this period's year.
         tests: [not_null]
@@ -69,11 +69,15 @@ models:
           or from adjacent periods, never reported by the company.
         tests:
           - not_null
-          - accepted_values:
+          - declared_in_vocabulary:
               arguments:
-                values: ["high", "medium", "low", "derived"]
+                vocabulary: confidence
       - name: inputs_confidence
         description: For a derived value, the weakest confidence among its inputs.
+        tests:
+          - declared_in_vocabulary:
+              arguments:
+                vocabulary: confidence
       - name: is_coherent
         description: >
           Whether the latest figure and the chosen statement's figure agree. False
@@ -82,9 +86,9 @@ models:
       - name: basis
         tests:
           - not_null
-          - accepted_values:
+          - declared_in_vocabulary:
               arguments:
-                values: ["us_gaap", "ifrs"]
+                vocabulary: basis
       - name: form
         description: >
           Only forms config counts as a report appear here. A proxy statement tags
@@ -108,9 +112,9 @@ models:
                           sum, or a recovered dimension total
         tests:
           - not_null
-          - accepted_values:
+          - declared_in_vocabulary:
               arguments:
-                values: ["confirmed", "contradicted", "unexamined", "not_applicable"]
+                vocabulary: evidence
       - name: statement_form
         description: The form of the filing this statement was read from.
       - name: was_restated

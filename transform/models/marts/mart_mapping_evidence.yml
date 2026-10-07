@@ -61,6 +61,6 @@ models:
           unmapped          a line item we hold no concept for
         tests:
           - not_null
-          - accepted_values:
+          - declared_in_vocabulary:
               arguments:
-                values: ["confirms_mapping", "mapped_elsewhere", "candidate", "unmapped"]
+                vocabulary: mapping_verdict

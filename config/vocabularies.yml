@@ -1,0 +1,185 @@
+# The closed sets of values the pipeline can produce, and what each one means.
+#
+# These lists were previously written into five model yml files as accepted_values,
+# so the same vocabulary existed in several places and its meaning only in prose a
+# reader had to find. Declaring them once here makes config the source: the models
+# are tested against this file, and the API generates its parameter documentation
+# from these descriptions, so a value cannot reach a caller without an explanation.
+#
+# Only sets no other config owns live here. `statement` belongs to tag_mappings.yml,
+# where each concept declares its own, and `form` belongs to companies.yml, where
+# each company lists the forms that count as a report.
+#
+# Order matters: values are published in the order they appear, because high before
+# medium before low reads correctly and alphabetical does not.
+
+vocabularies:
+  confidence:
+    description: How a published value was obtained.
+    values:
+      - value: high
+        description: >
+          A standard tag for this concept, reported by the company itself.
+      - value: medium
+        description: >
+          A weaker claim: a retired tag, another rulebook's tag, a sum of the parts
+          a company reported without a total, or a total recovered from dimensions.
+      - value: low
+        description: >
+          A judgement call for one company, flagged as such so it is never read as
+          a sector wide rule.
+      - value: derived
+        description: >
+          Computed from other concepts or from adjacent periods, never reported by
+          the company. The arithmetic is exact; what it rests on is inputs_confidence.
+
+  mapping_confidence:
+    description: >
+      What a mapping rule in config may claim, which is narrower than what the
+      pipeline can publish. A rule can never declare itself derived, because that
+      describes arithmetic the pipeline did and not a judgement about a tag.
+    values:
+      - value: high
+        description: A standard tag for this concept, used across the sector.
+      - value: medium
+        description: A retired tag, another rulebook's tag, or a sum of declared parts.
+      - value: low
+        description: A judgement call for one company.
+
+  period_kind:
+    description: What span of time a value covers.
+    values:
+      - value: annual
+        description: A full fiscal year.
+      - value: quarter
+        description: >
+          A single quarter. A fourth quarter is almost always derived, because the
+          annual report covers the whole year instead of filing one.
+      - value: half
+        description: The first six months, filed cumulatively in a second quarter report.
+      - value: nine_month
+        description: The first nine months, filed cumulatively in a third quarter report.
+      - value: instant
+        description: >
+          A single date rather than a span, which is what every balance sheet concept
+          is. There is no annual balance sheet, only a year end one.
+      - value: other
+        description: >
+          A span that matches none of the above, such as a transition period after a
+          company moves its fiscal year end.
+
+  unit:
+    description: >
+      What a value is measured in. Not every concept on a financial statement is
+      money, which is why a value is never published without its unit.
+    values:
+      - value: USD
+        description: United States dollars, as filed and never rescaled.
+      - value: USD/shares
+        description: Dollars per share, which is a ratio and cannot be added across periods.
+      - value: shares
+        description: A count of shares, which is a weighted average and not money.
+
+  basis:
+    description: Which accounting rulebook the filing was prepared under.
+    values:
+      - value: us_gaap
+        description: United States generally accepted accounting principles.
+      - value: ifrs
+        description: >
+          International financial reporting standards, filed on a 20-F. Concepts
+          carry the same name but are not always defined identically.
+
+  evidence:
+    description: >
+      What the filers' own calculation arithmetic says about the tag behind a number,
+      judged against the filing that reported it.
+    values:
+      - value: confirmed
+        description: That filing's arcs do not contradict the mapping.
+      - value: contradicted
+        description: >
+          That filing calls the tag a part of something we also call this concept's
+          total. Not necessarily a wrong figure, but a mapping worth reading twice.
+      - value: unexamined
+        description: >
+          That filing carries no calculation linkbase, which is true of most 10-Qs
+          because theirs are not fetched.
+      - value: not_applicable
+        description: >
+          The value has no single source tag: it is derived, a component sum, or a
+          total recovered from dimensions.
+
+  trust:
+    description: How much to trust a whole statement, summarised from its lines.
+    values:
+      - value: reported
+        description: Every line is a standard tag the company filed.
+      - value: computed
+        description: Contains a value derived from an identity or from adjacent periods.
+      - value: mapped
+        description: >
+          Contains a weaker tag: retired, from another rulebook, or recovered.
+      - value: check
+        description: An accounting identity fails, or a line was ambiguous.
+
+  coverage_status:
+    description: Why a concept is or is not present for a company and fiscal year.
+    values:
+      - value: reported
+        description: The company tagged it.
+      - value: derived
+        description: Computed from other concepts.
+      - value: ambiguous
+        description: Candidate tags disagreed and one was chosen.
+      - value: no_balance_sheet
+        description: >
+          A balance sheet concept in the company's earliest fiscal year. US rules
+          require three income statements but only two balance sheets, so this gap
+          can never be filled.
+      - value: not_applicable
+        description: An optional concept the company legitimately has none of.
+      - value: missing
+        description: There is nothing, and something could be done about it.
+
+  mapping_verdict:
+    description: >
+      What a tag a company presents on a statement says about our mapping of it.
+    values:
+      - value: confirms_mapping
+        description: We map it, and the filer agrees where it belongs.
+      - value: mapped_elsewhere
+        description: We map it, and this is another statement it appears on.
+      - value: candidate
+        description: >
+          Unmapped, labelled as a total, on a statement where the company has a gap.
+          The next mapping worth adding.
+      - value: unmapped
+        description: A line item we hold no concept for.
+
+  calculation_verdict:
+    description: >
+      Whether the filings' own declared arithmetic supports a tag our config
+      considered for a concept.
+    values:
+      - value: confirmed_total
+        description: Nothing in the arcs contradicts the mapping.
+      - value: component_of_same_concept
+        description: The filer treats it as a part of a total we already map.
+      - value: no_arcs
+        description: This company has no calculation linkbase at all.
+
+  year_basis:
+    description: >
+      Which year label a year range filters on. Produced by the API rather than the
+      pipeline, so no column holds it, but it is documented here with the rest so
+      every parameter's values are described in one place.
+    values:
+      - value: calendar
+        description: >
+          The calendar year most of the fiscal year falls in. The default, because
+          comparing companies with different year ends needs this one.
+      - value: fiscal
+        description: >
+          What the company itself calls the year. For checking a figure against a
+          filing, where the company's own label is what appears on the page.
