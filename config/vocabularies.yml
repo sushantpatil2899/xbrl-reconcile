@@ -14,6 +14,26 @@
 # medium before low reads correctly and alphabetical does not.
 
 vocabularies:
+  statement:
+    description: >
+      Which financial statement a concept belongs to. Three, because that is how
+      the filings are organised. tag_mappings.yml assigns one to each concept but
+      never says what the valid set is, so it is declared here.
+    values:
+      - value: income_statement
+        description: >
+          What the company earned and spent over a span of time, ending in profit.
+      - value: balance_sheet
+        description: >
+          What the company owned and owed on a single date. Every concept here is
+          an instant, which is why there is no annual balance sheet, only a year
+          end one.
+      - value: cash_flow
+        description: >
+          Where cash actually moved over a span, split into operating, investing
+          and financing. Profit and cash are not the same thing, which is the
+          reason this statement exists.
+
   confidence:
     description: How a published value was obtained.
     values:

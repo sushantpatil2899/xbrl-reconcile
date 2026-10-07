@@ -12,6 +12,16 @@ import yaml
 
 from xbrl_reconcile.config import Company, ConfigError
 
+# config/vocabularies.yml is where these sets are declared, for the dbt tests
+# and the API documentation. They are mirrored here rather than read from there,
+# because this module validates config before any network call and is a pure
+# function of its input: a dict goes in, a config comes out, no filesystem. Reading
+# YAML at import time would make that depend on the working directory, and threading
+# the vocabulary through the five private parsers would touch every caller to pass
+# three strings that never change.
+#
+# test_the_python_constants_match_the_declared_vocabularies keeps the mirror honest,
+# so the two cannot drift in anything that ships.
 CONFIDENCE_LEVELS = {"high", "medium", "low"}
 STATEMENTS = {"income_statement", "balance_sheet", "cash_flow"}
 

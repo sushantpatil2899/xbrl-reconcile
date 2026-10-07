@@ -25,9 +25,9 @@ models:
       - name: statement
         tests:
           - not_null
-          - accepted_values:
+          - declared_in_vocabulary:
               arguments:
-                values: ["income_statement", "balance_sheet", "cash_flow"]
+                vocabulary: statement
       - name: qualified_tag
         tests: [not_null]
       - name: is_mapped

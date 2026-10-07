@@ -3,6 +3,13 @@ from pathlib import Path
 import pytest
 
 from xbrl_reconcile.config import ConfigError
+from xbrl_reconcile.mappings import (
+    COMPONENT_CONFIDENCE_LEVELS,
+    CONFIDENCE_LEVELS,
+    DEFAULT_COMPONENT_CONFIDENCE,
+    DEFAULT_OVERRIDE_CONFIDENCE,
+    STATEMENTS,
+)
 from xbrl_reconcile.vocabularies import load_vocabularies, parse_vocabularies
 
 CONFIG = Path("config/vocabularies.yml")
@@ -108,3 +115,30 @@ def test_the_real_config_loads_and_every_value_is_described():
     # arithmetic the pipeline did, not a judgement about a tag.
     assert config.values_of("mapping_confidence") == ("high", "medium", "low")
     assert all(row["description"] for row in config.rows())
+
+
+def test_the_python_constants_match_the_declared_vocabularies():
+    """mappings.py mirrors these sets instead of reading them, so this is the guard.
+
+    It validates config before any network call and is a pure function of its input,
+    which reading YAML at import time would break. The duplication is therefore
+    deliberate, and this test is what stops it drifting in anything that ships.
+    """
+    config = load_vocabularies(CONFIG)
+
+    assert CONFIDENCE_LEVELS == set(config.values_of("mapping_confidence"))
+    assert STATEMENTS == set(config.values_of("statement"))
+
+
+def test_the_component_rule_names_only_declared_levels():
+    """A sum we assembled can never be high confidence.
+
+    That is a rule about the vocabulary rather than a copy of it, so a strict subset
+    rather than equality. What the test enforces is that the rule cannot come to
+    name a level config does not declare.
+    """
+    levels = set(load_vocabularies(CONFIG).values_of("mapping_confidence"))
+
+    assert COMPONENT_CONFIDENCE_LEVELS < levels
+    assert DEFAULT_COMPONENT_CONFIDENCE in COMPONENT_CONFIDENCE_LEVELS
+    assert DEFAULT_OVERRIDE_CONFIDENCE in levels

@@ -24,9 +24,9 @@ models:
       - name: statement
         tests:
           - not_null
-          - accepted_values:
+          - declared_in_vocabulary:
               arguments:
-                values: ["income_statement", "balance_sheet", "cash_flow"]
+                vocabulary: statement
       - name: period_end
         tests: [not_null]
       - name: lines_present

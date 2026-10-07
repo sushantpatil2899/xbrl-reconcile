@@ -2,10 +2,12 @@ from pathlib import Path
 
 from xbrl_reconcile.config import load_companies
 from xbrl_reconcile.mappings import load_mappings, validate_against_companies
+from xbrl_reconcile.vocabularies import load_vocabularies
 
 ROOT = Path(__file__).parent.parent
 MAPPINGS = ROOT / "config" / "tag_mappings.yml"
 COMPANIES = ROOT / "config" / "companies.yml"
+VOCABULARIES = ROOT / "config" / "vocabularies.yml"
 
 EXPECTED_CONCEPTS = {
     "revenue",
@@ -25,7 +27,8 @@ EXPECTED_CONCEPTS = {
     "financing_cash_flow",
     "temporary_equity",
 }
-UNITS = {"USD", "USD/shares", "shares"}
+# Read from config rather than repeated here, so there is one list of units.
+UNITS = set(load_vocabularies(VOCABULARIES).values_of("unit"))
 
 
 def test_real_config_loads():

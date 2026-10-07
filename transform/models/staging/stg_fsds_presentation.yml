@@ -38,9 +38,9 @@ models:
           comprehensive income, cover page and unclassifiable reports, which we hold
           no concepts for.
         tests:
-          - accepted_values:
+          - declared_in_vocabulary:
               arguments:
-                values: ["income_statement", "balance_sheet", "cash_flow"]
+                vocabulary: statement
       - name: tag
         tests: [not_null]
       - name: qualified_tag
