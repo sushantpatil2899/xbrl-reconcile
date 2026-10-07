@@ -19,6 +19,7 @@ xbrl-ingest-linkbase = "xbrl_reconcile.ingest.run_linkbase:main"
 xbrl-publish-warehouse = "xbrl_reconcile.warehouse:main"
 xbrl-fetch-warehouse = "xbrl_reconcile.warehouse:fetch_main"
 xbrl-publish-marts = "xbrl_reconcile.publish_marts:main"
+xbrl-fetch-marts = "xbrl_reconcile.publish_marts:fetch_main"
 
 [dependency-groups]
 dev = [
