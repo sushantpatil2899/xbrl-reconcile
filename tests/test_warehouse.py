@@ -51,9 +51,9 @@ def test_fetch_writes_the_stored_database(tmp_path):
     storage.write(WAREHOUSE_KEY, b"duckdb-bytes")
     target = tmp_path / "transform" / "xbrl.duckdb"
 
-    found = fetch_warehouse(target, storage)
+    downloaded = fetch_warehouse(target, storage)
 
-    assert found is True
+    assert downloaded == len(b"duckdb-bytes")
     assert target.read_bytes() == b"duckdb-bytes"
 
 
@@ -63,7 +63,7 @@ def test_fetch_is_not_an_error_when_nothing_is_stored(tmp_path):
 
     found = fetch_warehouse(target, LocalStorage(tmp_path / "bucket"))
 
-    assert found is False
+    assert found is None
     assert not target.exists()
 
 
@@ -109,8 +109,12 @@ def test_fetching_expands_what_publishing_compressed(tmp_path):
     publish_warehouse(db, storage)
     restored = tmp_path / "restored.duckdb"
 
-    assert fetch_warehouse(restored, storage) is True
+    downloaded = fetch_warehouse(restored, storage)
+
     assert restored.read_bytes() == b"duckdb-bytes" * 500
+    assert downloaded < restored.stat().st_size, (
+        "the downloaded size is the compressed one, which is the one that costs"
+    )
 
 
 def test_an_uncompressed_copy_is_still_readable(tmp_path):
@@ -120,5 +124,5 @@ def test_an_uncompressed_copy_is_still_readable(tmp_path):
     storage.write(WAREHOUSE_KEY, b"plain-duckdb-bytes")
     restored = tmp_path / "restored.duckdb"
 
-    assert fetch_warehouse(restored, storage) is True
+    assert fetch_warehouse(restored, storage) == len(b"plain-duckdb-bytes")
     assert restored.read_bytes() == b"plain-duckdb-bytes"

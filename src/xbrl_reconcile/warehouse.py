@@ -50,8 +50,12 @@ def publish_warehouse(path: Path, storage) -> tuple[int, int]:
     return len(data), len(compressed)
 
 
-def fetch_warehouse(path: Path, storage) -> bool:
-    """Write the stored database to path. Returns False when there is none yet.
+def fetch_warehouse(path: Path, storage) -> int | None:
+    """Write the stored database to path and return how many bytes were downloaded.
+
+    Returns None when there is nothing stored yet. The downloaded size is returned
+    rather than the size on disk, because once the copy is compressed those differ by
+    five times and the transferred figure is the one that costs anything.
 
     An uncompressed copy is accepted too, because that is what earlier runs wrote
     and what a database restored by hand would look like.
@@ -59,12 +63,13 @@ def fetch_warehouse(path: Path, storage) -> bool:
     path = Path(path)
     data = storage.read(WAREHOUSE_KEY)
     if data is None:
-        return False
+        return None
+    downloaded = len(data)
     if data[:2] == GZIP_MAGIC:
         data = gzip.decompress(data)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
-    return True
+    return downloaded
 
 
 def main() -> int:
@@ -88,10 +93,12 @@ def fetch_main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     path = Path(os.environ.get("WAREHOUSE_PATH", DEFAULT_PATH))
     storage = build_storage(os.environ)
-    if fetch_warehouse(path, storage):
+    downloaded = fetch_warehouse(path, storage)
+    if downloaded is not None:
         log.info(
-            "fetched %s (%.1f MB) from %s in %s",
+            "fetched %s (%.1f MB downloaded, %.1f MB on disk) from %s in %s",
             path,
+            downloaded / 1_000_000,
             path.stat().st_size / 1_000_000,
             WAREHOUSE_KEY,
             storage.location,
