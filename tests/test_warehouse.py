@@ -1,3 +1,4 @@
+import gzip
 import logging
 import os
 from pathlib import Path
@@ -14,15 +15,18 @@ from xbrl_reconcile.warehouse import (
 )
 
 
-def test_uploads_database_file(tmp_path):
+def test_uploads_database_gzipped(tmp_path):
+    """The only read a quiet transform run makes, so it is worth compressing: the
+    real database is 88 MB on disk and 16.7 MB stored."""
     db = tmp_path / "xbrl.duckdb"
-    db.write_bytes(b"duckdb-bytes")
+    db.write_bytes(b"duckdb-bytes" * 500)
     storage = LocalStorage(tmp_path / "bucket")
 
-    size = publish_warehouse(db, storage)
+    on_disk, stored = publish_warehouse(db, storage)
 
-    assert size == len(b"duckdb-bytes")
-    assert storage.read(WAREHOUSE_KEY) == b"duckdb-bytes"
+    assert on_disk == len(b"duckdb-bytes" * 500)
+    assert stored < on_disk
+    assert gzip.decompress(storage.read(WAREHOUSE_KEY)) == b"duckdb-bytes" * 500
 
 
 def test_publishing_replaces_the_previous_database(tmp_path):
@@ -34,7 +38,7 @@ def test_publishing_replaces_the_previous_database(tmp_path):
     db.write_bytes(b"second")
     publish_warehouse(db, storage)
 
-    assert storage.read(WAREHOUSE_KEY) == b"second"
+    assert gzip.decompress(storage.read(WAREHOUSE_KEY)) == b"second"
 
 
 def test_missing_database_is_an_error(tmp_path):
@@ -96,3 +100,25 @@ def test_a_missing_database_says_where_it_looked(tmp_path, caplog):
 
     assert f"local folder {tmp_path / 'empty'}" in caplog.text
     assert caplog.records[-1].levelname == "WARNING"
+
+
+def test_fetching_expands_what_publishing_compressed(tmp_path):
+    db = tmp_path / "xbrl.duckdb"
+    db.write_bytes(b"duckdb-bytes" * 500)
+    storage = LocalStorage(tmp_path / "bucket")
+    publish_warehouse(db, storage)
+    restored = tmp_path / "restored.duckdb"
+
+    assert fetch_warehouse(restored, storage) is True
+    assert restored.read_bytes() == b"duckdb-bytes" * 500
+
+
+def test_an_uncompressed_copy_is_still_readable(tmp_path):
+    """What earlier runs wrote, and what a database restored by hand would look
+    like. The format is detected from the bytes, so the switch needed no migration."""
+    storage = LocalStorage(tmp_path / "bucket")
+    storage.write(WAREHOUSE_KEY, b"plain-duckdb-bytes")
+    restored = tmp_path / "restored.duckdb"
+
+    assert fetch_warehouse(restored, storage) is True
+    assert restored.read_bytes() == b"plain-duckdb-bytes"
