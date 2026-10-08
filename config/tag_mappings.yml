@@ -290,3 +290,55 @@ company_overrides:
       Splunk reports no NetIncomeLoss. This tag is net income after preferred
       dividends, and Splunk reports zero preferred shares outstanding in every
       year, so the two are equal.
+
+# Corrections to the scale a filer tagged a value at.
+#
+# Not a mapping: the tag is right and the number is out by a factor. XBRL carries a
+# `decimals` attribute saying what a figure is rounded to, but companyfacts does not
+# expose it, so a scale error arrives looking like an ordinary number.
+#
+# Scoped by accession, because that is the grain the error has. HubSpot tagged three
+# 10-Qs in thousands while the 10-K filed between two of them is in units, so neither
+# a fiscal year nor a filed date window separates them. Where a filing is mixed, a
+# period bound narrows it further.
+#
+# Every entry is checkable against the document it names, and the share scale test
+# still runs afterwards, so an override that misses or overshoots shows up as a
+# failure rather than as silence.
+scale_overrides:
+  - cik: 1404655
+    concept: shares_diluted
+    multiply_by: 1000
+    accessions:
+      - "0001564590-15-006500"
+      - "0001564590-15-009381"
+      - "0001564590-16-017682"
+    note: >
+      HubSpot tagged every diluted share count in these three 10-Qs in thousands. Its
+      10-K filed 2016-02-24 sits between the second and third of them and is in units,
+      which is why this is scoped to the filings rather than to a period.
+
+  - cik: 1372612
+    concept: shares_diluted
+    multiply_by: 1000
+    accessions:
+      - "0000950170-23-007573"
+    note: >
+      Box tagged all three diluted share counts in its 2023 10-K in thousands. Every
+      other Box filing, before and after, is in units.
+
+  - cik: 1561550
+    concept: shares_diluted
+    multiply_by: 1000
+    accessions:
+      - "0001564590-19-043256"
+      - "0001564590-20-006422"
+      - "0001564590-21-009770"
+    from_period_end: 2019-01-01
+    note: >
+      Datadog tagged current period diluted share counts in thousands in these three
+      filings while leaving the prior year comparatives in the same documents in
+      units, so the correction is bounded to periods ending in 2019 or later. None of
+      these produced a wrong published value, because a correctly scaled filing won
+      on recency each time, but the disagreement is real and would surface the moment
+      one of these became the latest word on a period.

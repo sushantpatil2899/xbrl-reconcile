@@ -345,12 +345,13 @@ CONFIG_SNAPSHOTS = [
     "tag_mapping_overrides",
     "tag_components",
     "tag_summable_axes",
+    "tag_scale_overrides",
     "vocabularies",
 ]
 
 
 def test_snapshot_config_writes_every_config_file(tmp_path):
-    """The transform workflow runs this alone, so it must cover all six.
+    """The transform workflow runs this alone, so it must cover all seven.
 
     A missing snapshot is a dbt compilation error that skips everything downstream,
     which is why this asserts the whole set rather than that it wrote something.

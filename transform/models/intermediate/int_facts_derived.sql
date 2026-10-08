@@ -27,6 +27,14 @@
   identities, not judgements about companies. Which companies need them is
   discovered from the data, not configured.
 
+  `optional_terms` are summed when present and never gate the derivation. Temporary
+  equity is the only one: it belongs in the balance sheet identity, but most
+  companies have none, so requiring it would stop total liabilities being derived
+  for everyone. Leaving it out entirely was the older behaviour and disagreed with
+  the same identity as written in consistency_balance_sheet and the confidence
+  report, which would have overstated liabilities for any company reporting both.
+  All three now read one definition, in macros/accounting_identities.sql.
+
   Operating income appears as both an input and an output below, because the same
   identity is useful in two directions. Operating expenses are derived from it where
   a filer reports no expense total, and it is derived from operating expenses where a
@@ -60,8 +68,9 @@
     {
         "concept": "total_liabilities",
         "statement": "balance_sheet",
-        "expression": "total_assets-total_equity",
+        "expression": "total_assets-total_equity-temporary_equity",
         "terms": [("total_assets", "+"), ("total_equity", "-")],
+        "optional_terms": [("temporary_equity", "-")],
     },
 ] %}
 
@@ -76,6 +85,7 @@ with resolved as (
 candidates as (
 
 {% for derivation in derivations %}
+{% set all_terms = derivation.terms + derivation.get("optional_terms", []) %}
     select
         cik,
         ticker,
@@ -87,14 +97,14 @@ candidates as (
         'USD' as unit,
         sum(
             case concept
-            {%- for term, sign in derivation.terms %}
+            {%- for term, sign in all_terms %}
                 when '{{ term }}' then {{ sign }} value
             {%- endfor %}
             end
         ) as value,
         sum(
             case concept
-            {%- for term, sign in derivation.terms %}
+            {%- for term, sign in all_terms %}
                 when '{{ term }}' then {{ sign }} originally_reported_value
             {%- endfor %}
             end
@@ -120,13 +130,20 @@ candidates as (
         ) as inputs_confidence_rank
     from resolved
     where concept in (
-        {%- for term, sign in derivation.terms %}
+        {%- for term, sign in all_terms %}
         '{{ term }}'{{ "," if not loop.last }}
         {%- endfor %}
     )
     group by cik, ticker, period_start, period_end, period_kind, basis
-    -- Every input must be present, or the concept is left unmapped.
-    having count(distinct concept) = {{ derivation.terms | length }}
+    -- Every required input must be present, or the concept is left unmapped. An
+    -- optional one is counted when it is there and does not gate the derivation.
+    having count(distinct concept) filter (
+        where concept in (
+            {%- for term, sign in derivation.terms %}
+            '{{ term }}'{{ "," if not loop.last }}
+            {%- endfor %}
+        )
+    ) = {{ derivation.terms | length }}
 {{ "union all" if not loop.last }}
 {% endfor %}
 

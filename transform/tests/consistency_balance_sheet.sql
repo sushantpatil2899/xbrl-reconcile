@@ -72,12 +72,14 @@ select
     total_equity,
     total_liabilities + temporary_equity + total_equity as expected_total_assets,
     round(
-        100.0 * (total_assets - total_liabilities - temporary_equity - total_equity)
+        100.0 * {{ balance_sheet_gap('total_assets', 'total_liabilities', 'temporary_equity', 'total_equity') }}
         / abs(total_assets), 2
     ) as pct_out
 from balances
 where total_assets is not null
     and total_liabilities is not null
     and total_equity is not null
-    and abs(total_assets - total_liabilities - temporary_equity - total_equity)
-        > {{ var('consistency_tolerance') }} * abs(total_assets)
+    and not {{ identity_holds(
+        balance_sheet_gap('total_assets', 'total_liabilities', 'temporary_equity', 'total_equity'),
+        'total_assets'
+    ) }}

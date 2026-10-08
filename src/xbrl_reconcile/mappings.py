@@ -6,6 +6,7 @@ So the config is validated here, before dbt ever reads it.
 """
 
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 
 import yaml
@@ -28,6 +29,15 @@ STATEMENTS = {"income_statement", "balance_sheet", "cash_flow"}
 CONCEPT_KEYS = {"statement", "unit", "tags", "components", "optional", "additive"}
 COMPONENT_KEYS = {"tags", "confidence", "note"}
 SUMMABLE_AXIS_KEYS = {"axis", "confidence", "note"}
+SCALE_OVERRIDE_KEYS = {
+    "cik",
+    "concept",
+    "multiply_by",
+    "accessions",
+    "from_period_end",
+    "through_period_end",
+    "note",
+}
 TAG_KEYS = {"tag", "confidence", "note"}
 OVERRIDE_KEYS = {
     "cik",
@@ -118,6 +128,26 @@ class CompanyOverride:
 
 
 @dataclass(frozen=True)
+class ScaleOverride:
+    """A correction to the scale a filer tagged a value at, not to which tag it is.
+
+    Scoped by accession, because that is the grain the error has: HubSpot tagged three
+    10-Qs in thousands with a 10-K in units filed between two of them, so no date
+    window separates them. The optional period bounds narrow a filing that is mixed,
+    as Datadog's are, tagging current periods in thousands and leaving the prior year
+    comparatives in the same document in units.
+    """
+
+    cik: int
+    concept: str
+    multiply_by: float
+    accessions: tuple[str, ...]
+    from_period_end: date | None = None
+    through_period_end: date | None = None
+    note: str = ""
+
+
+@dataclass(frozen=True)
 class SummableAxis:
     """An axis whose members partition whatever they break down."""
 
@@ -131,6 +161,7 @@ class MappingConfig:
     concepts: dict[str, ConceptSpec] = field(default_factory=dict)
     overrides: tuple[CompanyOverride, ...] = ()
     summable_axes: tuple[SummableAxis, ...] = ()
+    scale_overrides: tuple[ScaleOverride, ...] = ()
 
     def concept_rows(self) -> list[dict]:
         """One row per concept and tag, the shape dbt reads."""
@@ -171,6 +202,26 @@ class MappingConfig:
             for tag in component.tags
         ]
 
+    def scale_override_rows(self) -> list[dict]:
+        """One row per override and filing, so SQL joins without unnesting."""
+        return [
+            {
+                "cik": override.cik,
+                "concept": override.concept,
+                "multiply_by": override.multiply_by,
+                "accession": accession,
+                "from_period_end": (
+                    override.from_period_end.isoformat() if override.from_period_end else None
+                ),
+                "through_period_end": (
+                    override.through_period_end.isoformat() if override.through_period_end else None
+                ),
+                "note": override.note,
+            }
+            for override in self.scale_overrides
+            for accession in override.accessions
+        ]
+
     def summable_axis_rows(self) -> list[dict]:
         return [
             {"axis": entry.axis, "confidence": entry.confidence, "note": entry.note}
@@ -209,7 +260,11 @@ def load_mappings(path: Path) -> MappingConfig:
 def parse_mappings(data: dict) -> MappingConfig:
     if not isinstance(data, dict):
         raise ConfigError("mapping config must be a mapping with 'concepts'")
-    _reject_unknown(set(data), {"concepts", "company_overrides", "summable_axes"}, "top level")
+    _reject_unknown(
+        set(data),
+        {"concepts", "company_overrides", "summable_axes", "scale_overrides"},
+        "top level",
+    )
 
     raw_concepts = data.get("concepts") or {}
     if not raw_concepts:
@@ -236,7 +291,63 @@ def parse_mappings(data: dict) -> MappingConfig:
         _parse_summable_axis(raw, index)
         for index, raw in enumerate(data.get("summable_axes") or [])
     )
-    return MappingConfig(concepts=concepts, overrides=overrides, summable_axes=summable_axes)
+    scale_overrides = tuple(
+        _parse_scale_override(raw, concepts, index)
+        for index, raw in enumerate(data.get("scale_overrides") or [])
+    )
+    return MappingConfig(
+        concepts=concepts,
+        overrides=overrides,
+        summable_axes=summable_axes,
+        scale_overrides=scale_overrides,
+    )
+
+
+def _parse_scale_override(raw: dict, concepts: dict, index: int) -> ScaleOverride:
+    label = f"scale override {index} (cik {raw.get('cik', 'missing')})"
+    if not isinstance(raw, dict):
+        raise ConfigError(f"scale override {index} must be a mapping")
+    _reject_unknown(set(raw), SCALE_OVERRIDE_KEYS, label)
+
+    missing = {"cik", "concept", "multiply_by", "accessions"} - set(raw)
+    if missing:
+        raise ConfigError(f"{label} is missing {sorted(missing)}")
+
+    concept = raw.get("concept")
+    if concept not in concepts:
+        raise ConfigError(f"{label}: '{concept}' is not a mapped concept")
+
+    multiplier = raw.get("multiply_by")
+    if not isinstance(multiplier, int | float) or isinstance(multiplier, bool):
+        raise ConfigError(f"{label}: multiply_by must be a number, got {multiplier!r}")
+    # A multiplier of one corrects nothing and would read as an applied fix.
+    if multiplier in (0, 1):
+        raise ConfigError(f"{label}: multiply_by of {multiplier} would change nothing")
+
+    accessions = raw.get("accessions")
+    if (
+        not isinstance(accessions, list)
+        or not accessions
+        or not all(isinstance(a, str) and a.strip() for a in accessions)
+    ):
+        raise ConfigError(f"{label}: accessions must be a non empty list of accession numbers")
+
+    start, end = raw.get("from_period_end"), raw.get("through_period_end")
+    for name, value in (("from_period_end", start), ("through_period_end", end)):
+        if value is not None and not isinstance(value, date):
+            raise ConfigError(f"{label}: {name} must be a date, got {value!r}")
+    if start and end and start > end:
+        raise ConfigError(f"{label}: from_period_end {start} is after {end}")
+
+    return ScaleOverride(
+        cik=int(raw["cik"]),
+        concept=concept,
+        multiply_by=float(multiplier),
+        accessions=tuple(accessions),
+        from_period_end=start,
+        through_period_end=end,
+        note=str(raw.get("note", "")).strip(),
+    )
 
 
 def _parse_summable_axis(raw: dict, index: int) -> SummableAxis:

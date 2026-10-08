@@ -111,13 +111,12 @@ checked as (
                 and total_assets is not null
                 and total_liabilities is not null
                 and total_equity is not null
-                then total_assets - total_liabilities
-                    - coalesce(temporary_equity, 0) - total_equity
+                then {{ balance_sheet_gap('total_assets', 'total_liabilities', 'temporary_equity', 'total_equity') }}
             when statement = 'income_statement'
                 and revenue is not null
                 and cost_of_revenue is not null
                 and gross_profit is not null
-                then revenue - cost_of_revenue - gross_profit
+                then {{ gross_profit_gap('revenue', 'cost_of_revenue', 'gross_profit') }}
         end as identity_gap,
         case
             when statement = 'balance_sheet' then abs(total_assets)
@@ -168,9 +167,14 @@ select
         outranks a known approximation, and a weaker tag is a judgement about what
         a tag means while a derived value is arithmetic over reported ones. -#}
     case
+        -- Incoherence counts as a reason to look. A statement carrying a line newer
+        -- than the filing it was read from is not wrong, but it is not one document
+        -- either, and calling it `reported` claimed more than we know: the figures
+        -- are each a company's own, and they were never published side by side.
         when (checked.identity_gap is not null
-              and abs(checked.identity_gap) > {{ var('consistency_tolerance') }} * greatest(checked.identity_scale, 1))
+              and not {{ identity_holds('checked.identity_gap', 'checked.identity_scale') }})
             or checked.ambiguous_lines > 0
+            or checked.incoherent_lines > 0
             then 'check'
         when checked.medium_lines > 0 or checked.low_lines > 0 then 'mapped'
         when checked.derived_lines > 0 then 'computed'

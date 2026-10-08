@@ -1,0 +1,38 @@
+version: 2
+
+models:
+  - name: stg_scale_overrides
+    description: >
+      One row per scale correction and filing. Scoped by accession because that is
+      the grain the error has: HubSpot tagged three 10-Qs in thousands with a 10-K in
+      units filed between two of them, so no date window separates them.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cik, concept, accession]
+    columns:
+      - name: cik
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_companies')
+                field: cik
+      - name: concept
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_tag_mappings')
+                field: concept
+      - name: multiply_by
+        description: What the filed figure is multiplied by to reach the real one.
+        tests: [not_null]
+      - name: accession
+        description: The filing the correction applies to, checkable against EDGAR.
+        tests: [not_null]
+      - name: from_period_end
+        description: >
+          Set only where a filing is mixed. Datadog tagged current periods in
+          thousands and left the prior year comparatives in units.
+      - name: through_period_end

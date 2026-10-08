@@ -141,7 +141,9 @@ vocabularies:
         description: >
           Contains a weaker tag: retired, from another rulebook, or recovered.
       - value: check
-        description: An accounting identity fails, or a line was ambiguous.
+        description: >
+          An accounting identity fails, a line was ambiguous, or the statement
+          carries a line newer than the filing it was read from.
 
   coverage_status:
     description: Why a concept is or is not present for a company and fiscal year.

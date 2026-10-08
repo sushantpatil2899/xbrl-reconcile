@@ -77,7 +77,8 @@ models:
         description: Whether the gap is within the consistency tolerance. Null when unchecked.
       - name: trust
         description: >
-          check    an identity fails, or a line was ambiguous
+          check    an identity fails, a line was ambiguous, or the statement
+                   carries a line newer than the filing it was read from
           mapped   contains a weaker tag: retired, another rulebook, or recovered
           computed contains a value derived from an identity or adjacent periods
           reported every line is a standard tag the company filed

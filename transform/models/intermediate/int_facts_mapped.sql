@@ -330,9 +330,11 @@ ranked as (
         ) as runner_up_value
     from all_candidates
 
-)
+),
 
-select
+chosen as (
+
+    select
     cik,
     ticker,
     concept,
@@ -371,3 +373,23 @@ select
     end as confidence
 from ranked
 where rank_in_filing = 1
+
+)
+
+-- Corrections to the scale a filer tagged a value at, applied per filing because
+-- that is the grain the error has: HubSpot tagged three 10-Qs in thousands while the
+-- 10-K between them is in units, and Datadog tagged current periods in thousands
+-- while leaving the prior year comparatives in the same filing in units. Correcting
+-- here, before any comparison across filings, means the recency rule then picks a
+-- figure that is already in the right scale and the originally reported value keeps
+-- the scale its own filing used.
+select
+    chosen.* exclude (value),
+    chosen.value * coalesce(fix.multiply_by, 1) as value
+from chosen
+left join {{ ref('stg_scale_overrides') }} as fix
+    on fix.cik = chosen.cik
+    and fix.concept = chosen.concept
+    and fix.accession = chosen.accession
+    and chosen.period_end >= coalesce(fix.from_period_end, chosen.period_end)
+    and chosen.period_end <= coalesce(fix.through_period_end, chosen.period_end)

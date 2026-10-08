@@ -1,3 +1,5 @@
+from datetime import date
+
 import pytest
 
 from xbrl_reconcile.config import Company
@@ -510,3 +512,85 @@ def test_a_flag_written_as_text_is_rejected_rather_than_read_as_true():
         concepts = {"revenue": {**REVENUE, flag: "false"}}
         with pytest.raises(ConfigError, match=f"{flag} must be true or false"):
             parse_mappings(make_config(concepts))
+
+
+SCALE_BASE = {
+    "concepts": {
+        "shares_diluted": {
+            "statement": "income_statement",
+            "unit": "shares",
+            "tags": [
+                {
+                    "tag": "us-gaap:WeightedAverageNumberOfDilutedSharesOutstanding",
+                    "confidence": "high",
+                }
+            ],
+        }
+    }
+}
+
+
+def with_scale(**override):
+    entry = {
+        "cik": 1,
+        "concept": "shares_diluted",
+        "multiply_by": 1000,
+        "accessions": ["0001564590-15-006500"],
+    }
+    entry.update(override)
+    return SCALE_BASE | {"scale_overrides": [entry]}
+
+
+def test_a_scale_override_produces_one_row_per_filing():
+    """Flat rows, because the correction is applied by joining on the accession."""
+    config = parse_mappings(with_scale(accessions=["0001564590-15-006500", "0001564590-15-009381"]))
+
+    rows = config.scale_override_rows()
+    assert [row["accession"] for row in rows] == [
+        "0001564590-15-006500",
+        "0001564590-15-009381",
+    ]
+    assert all(row["multiply_by"] == 1000.0 for row in rows)
+    assert all(row["from_period_end"] is None for row in rows)
+
+
+def test_period_bounds_are_optional_and_kept_when_given():
+    """Only a mixed filing needs them: Datadog tagged current periods in thousands
+    and left the prior year comparatives in the same document in units."""
+    config = parse_mappings(with_scale(from_period_end=date(2019, 1, 1)))
+
+    assert config.scale_override_rows()[0]["from_period_end"] == "2019-01-01"
+
+
+def test_a_scale_override_for_an_unmapped_concept_is_rejected():
+    with pytest.raises(ConfigError, match="not a mapped concept"):
+        parse_mappings(with_scale(concept="ebitda"))
+
+
+def test_a_multiplier_that_changes_nothing_is_rejected():
+    """A factor of one reads as a correction that was applied and was not."""
+    with pytest.raises(ConfigError, match="would change nothing"):
+        parse_mappings(with_scale(multiply_by=1))
+
+
+def test_a_multiplier_that_is_not_a_number_is_rejected():
+    with pytest.raises(ConfigError, match="must be a number"):
+        parse_mappings(with_scale(multiply_by="1000"))
+
+
+def test_an_empty_accession_list_is_rejected():
+    """Without a filing to point at, the override has no grain to apply on."""
+    with pytest.raises(ConfigError, match="accessions must be a non empty list"):
+        parse_mappings(with_scale(accessions=[]))
+
+
+def test_a_backwards_period_window_is_rejected():
+    with pytest.raises(ConfigError, match="is after"):
+        parse_mappings(
+            with_scale(from_period_end=date(2020, 1, 1), through_period_end=date(2019, 1, 1))
+        )
+
+
+def test_a_misspelled_scale_key_is_an_error_rather_than_ignored():
+    with pytest.raises(ConfigError, match="unknown keys"):
+        parse_mappings(with_scale(multiply_bye=1000))
