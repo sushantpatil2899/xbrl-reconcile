@@ -170,6 +170,20 @@ class UnknownValue(QueryError):
         self.valid = valid
 
 
+class MartUnavailable(Exception):
+    """A mart an endpoint needs was not published.
+
+    Not a QueryError: the caller did nothing wrong. Raised rather than letting DuckDB
+    fail on a missing view, because "Catalog Error: Table with name ... does not exist"
+    reaches a reader as a 500 and tells them nothing they can act on.
+    """
+
+    def __init__(self, mart: str, available: tuple[str, ...]):
+        super().__init__(f"{mart} was not published; this set has {', '.join(available)}")
+        self.mart = mart
+        self.available = available
+
+
 class UnsupportedFilter(QueryError):
     """A filter cannot apply to this mart, for a reason worth stating."""
 
@@ -375,6 +389,8 @@ class MartStore:
         Two queries, because the row query carries a LIMIT and so cannot report how
         many matched. The count reads only the filter columns and costs microseconds.
         """
+        if mart not in self.marts:
+            raise MartUnavailable(mart, self.marts)
         sort = sort or SORTS[mart]
         clause = where.sql()
         params = where.params

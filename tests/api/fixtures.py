@@ -144,6 +144,81 @@ BALANCES = [
     balance("NOW", "2015-12-31", 2015, 2015, True, 1500.0, 300.0, cash_confidence="medium"),
 ]
 
+
+def income(ticker, end, fiscal, calendar, revenue, cost, cost_confidence="high"):
+    return {
+        "cik": "1",
+        "ticker": ticker,
+        "company_name": f"{ticker} Inc.",
+        "period_start": None,
+        "period_end": end,
+        "period_kind": "annual",
+        "period_days": 365,
+        "fiscal_year": fiscal,
+        "fiscal_quarter": None,
+        "calendar_year_equivalent": calendar,
+        "fiscal_year_end": end,
+        "is_year_end": True,
+        "revenue": revenue,
+        "revenue_confidence": "high",
+        "cost_of_revenue": cost,
+        "cost_of_revenue_confidence": cost_confidence,
+        "basis": "us_gaap",
+        "statement_accession": "acc-1",
+        "statement_form": "10-K",
+        "statement_filed_date": end,
+        "statement_covers_whole": True,
+        "incoherent_lines": 0,
+    }
+
+
+INCOME = [
+    income("WDAY", "2015-01-31", 2015, 2014, 787.86, 264.803, cost_confidence="medium"),
+    income("NOW", "2015-12-31", 2015, 2015, 1005.0, 300.0),
+]
+
+
+def trust_row(ticker, end, fiscal, calendar, statement, trust, present, expected, holds=True):
+    return {
+        "cik": "1",
+        "ticker": ticker,
+        "company_name": f"{ticker} Inc.",
+        "statement": statement,
+        "period_start": None,
+        "period_end": end,
+        "period_kind": "annual" if statement != "balance_sheet" else "instant",
+        "fiscal_year": fiscal,
+        "fiscal_quarter": None,
+        "calendar_year_equivalent": calendar,
+        "basis": "us_gaap",
+        "lines_present": present,
+        "lines_expected": expected,
+        "is_complete": present == expected,
+        "high_lines": present,
+        "medium_lines": 0,
+        "low_lines": 0,
+        "derived_lines": 0,
+        "ambiguous_lines": 0,
+        "restated_lines": 0,
+        "incoherent_lines": 0,
+        "confirmed_lines": present,
+        "contradicted_lines": 0,
+        "identity_gap": 0.0,
+        "identity_holds": holds,
+        "statement_accession": "acc-1",
+        "statement_form": "10-K",
+        "statement_filed_date": end,
+        "statement_covers_whole": True,
+        "trust": trust,
+    }
+
+
+CONFIDENCE = [
+    trust_row("WDAY", "2015-01-31", 2015, 2014, "income_statement", "reported", 2, 2),
+    trust_row("NOW", "2015-12-31", 2015, 2015, "income_statement", "check", 1, 2, holds=False),
+    trust_row("NOW", "2015-12-31", 2015, 2015, "balance_sheet", "reported", 2, 2),
+]
+
 CONCEPT_COLUMNS = ("concept", "statement", "position", "unit", "is_additive", "is_optional")
 CONCEPTS = [
     ("revenue", "income_statement", 1, "USD", True, False),
@@ -266,11 +341,29 @@ TYPES = {
     "total_assets_confidence": "varchar",
     "cash": "double",
     "cash_confidence": "varchar",
+    "revenue": "double",
+    "revenue_confidence": "varchar",
+    "cost_of_revenue": "double",
+    "cost_of_revenue_confidence": "varchar",
     "statement_accession": "varchar",
     "statement_form": "varchar",
     "statement_filed_date": "date",
     "statement_covers_whole": "boolean",
     "incoherent_lines": "integer",
+    "lines_present": "integer",
+    "lines_expected": "integer",
+    "is_complete": "boolean",
+    "high_lines": "integer",
+    "medium_lines": "integer",
+    "low_lines": "integer",
+    "derived_lines": "integer",
+    "ambiguous_lines": "integer",
+    "restated_lines": "integer",
+    "confirmed_lines": "integer",
+    "contradicted_lines": "integer",
+    "identity_gap": "double",
+    "identity_holds": "boolean",
+    "trust": "varchar",
     "position": "integer",
     "is_additive": "boolean",
     "is_optional": "boolean",
@@ -302,6 +395,8 @@ def published_marts(root: Path) -> Path:
 
     _from_dicts(connection, "mart_financials", FACTS)
     _from_dicts(connection, "mart_balance_sheet", BALANCES)
+    _from_dicts(connection, "mart_income_statement", INCOME)
+    _from_dicts(connection, "mart_confidence_report", CONFIDENCE)
     _table(connection, "mart_concepts", CONCEPT_COLUMNS, CONCEPTS)
     _table(connection, "mart_mapping_coverage", COVERAGE_COLUMNS, COVERAGE)
 
@@ -323,6 +418,8 @@ def published_marts(root: Path) -> Path:
     for name in (
         "mart_financials",
         "mart_balance_sheet",
+        "mart_income_statement",
+        "mart_confidence_report",
         "mart_concepts",
         "mart_vocabularies",
         "mart_mapping_coverage",
