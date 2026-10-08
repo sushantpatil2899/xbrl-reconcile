@@ -1,0 +1,22 @@
+# The build context is sent to the daemon before anything runs, so a 92 MB database
+# and a local raw layer would be copied over on every build for nothing.
+.git
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+
+data/
+warehouse/
+transform/target/
+transform/logs/
+transform/dbt_packages/
+*.duckdb
+*.duckdb.wal
+
+docs/
+tests/
+infra/
+.github/
+README.md

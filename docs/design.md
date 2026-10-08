@@ -1629,7 +1629,183 @@ compressed one, and the next read 15.0 MB.
   downloaded. This was the third time in the same stretch of work that a log said
   something true and useless.
 
-## 15. Open decisions for later phases
+## 15. Phase 7 as built: the API
+
+### 15.1 What it serves
+
+Eleven endpoints over the twelve published Parquet marts, in four groups: metadata
+(`/`, `/companies`, `/concepts`, `/vocabularies`), the numbers (`/financials`,
+`/statements/{statement}`), quality (`/confidence`, `/coverage`) and evidence
+(`/evidence/{kind}`, `/tags/{kind}`). Plus `/healthz`.
+
+The serving layer never opens the 92 MB database. It reads 1.4 MB of Parquet, and
+DuckDB touches only the columns and row groups a query needs.
+
+### 15.2 The layers, and why they are separate
+
+`api/queries.py` holds the data layer and imports no web framework. `api/app.py`
+holds HTTP and knows no SQL. The split is not tidiness: the filtering rules, the
+year basis decision and the balance sheet translation are the parts most likely to
+be wrong, and keeping them out of the routes means they are tested against a
+Parquet fixture in milliseconds, with no server, and can be reused by the static
+page in Phase 7's successor.
+
+`api/asgi.py` exists only to hold the module level `app`. Opening the marts is file
+I/O, and doing it during an import would make every test that imports the app module
+depend on a directory of Parquet existing. In `asgi.py` failing fast is correct: a
+serving process with no data should refuse to start.
+
+### 15.3 The factory, which was forced rather than chosen
+
+FastAPI reads a route's type annotations when the decorator runs, which is at import
+time. Enums generated from the published data therefore have to exist *before* the
+routes are declared, and a `lifespan` startup handler runs far too late. So the app
+is built by `create_app(store)`, with the store opened by the caller. The side
+benefit is that each test gets an app over its own fixture.
+
+### 15.4 Documentation generated from config
+
+Every parameter's description is assembled at startup from `mart_vocabularies`, as a
+markdown list of value and meaning. The meaning of `derived` or `no_balance_sheet`
+lives in `config/vocabularies.yml` and is never typed in Python. The ticker and
+concept lists come from the data, so adding a company to config grows the
+documentation with no code change. A test asserts that a sentence from config
+appears in the OpenAPI document, so this cannot quietly regress into hand written
+prose.
+
+OpenAPI has no standard field for per value descriptions, only `enum` for the list
+and `description` for the schema. The generated markdown list inside `description`
+is the conventional workaround and renders correctly in Swagger and ReDoc.
+
+Enums cover only the single value parameters (`period`, `year_basis`, `basis`, and
+the path parameters). A comma separated list cannot be an enum, so `tickers`,
+`concepts`, `confidence`, `evidence`, `status` and `trust` are documented strings
+validated against the data, and an unknown value returns a 400 naming the valid set.
+
+### 15.5 Decisions
+
+**`year_basis` is unset rather than defaulted in the signature.** The default is
+calendar, but `mart_mapping_coverage` has only `fiscal_year`, so it cannot serve a
+calendar range. Had the default lived in the dataclass signature, coverage would
+have rejected every request rather than only an explicit one. Unset now resolves to
+the comparable label where a mart has one and to fiscal where it does not. On the
+HTTP side `/coverage` simply does not offer the parameter, because advertising one
+that could only ever fail is worse documentation than omitting it.
+
+**The balance sheet translates `period`.** All 1,230 rows are instants, so there is
+no annual balance sheet; `period=annual` means `is_year_end`. A caller asking for
+the 2025 annual statements gets all three without knowing which is made of instants,
+and the real `period_kind` is always in the response.
+
+**Statement lines are an ordered array.** JSON object keys carry no order, and each
+value belongs structurally beside its own confidence rather than being paired by a
+`_confidence` naming convention the client has to know. The array is built by looping
+over `mart_concepts`, so adding a concept to config grows it with no code change.
+
+**Values are bound, identifiers are allowlisted.** SQL has no placeholder for a
+column name, so binding alone cannot protect one. The single exception is the Parquet
+path in `CREATE VIEW`, which DuckDB will not parameterise; it is quoted as SQL
+expects and the mart name is checked against a plain identifier first.
+
+**An absent mart is a 503.** Found while writing the tests: a mart the index did not
+carry reached the reader as a DuckDB catalog error, which is a 500 saying nothing
+actionable. It now names the missing mart and lists what is available. 503 because
+the caller did nothing wrong and the data is incomplete.
+
+### 15.6 Pagination
+
+Offset and limit, defaulting to 1000 and capped at 10000, with `total_rows` always
+reported. `next` and `previous` are built by replacing only the offset on the
+incoming URL, so every other filter survives; the RFC 8288 `Link` header carries the
+same thing for generic clients. Each endpoint has a fixed sort over columns unique
+for its mart's grain, because offset paging without a deterministic order can overlap
+or skip rows invisibly.
+
+Cursor pagination is deliberately not used. Cursors solve rows shifting between page
+requests, and the marts are rewritten once a day and never mutated in between.
+
+### 15.7 Logging and the limiter
+
+One structured JSON line per request to stdout, carrying the route template rather
+than the raw URL so lines aggregate by endpoint. Without issued keys these count
+requests and not people, which is accepted.
+
+A token bucket per client address, 60 a minute by default, with `429` and
+`Retry-After` and the `X-RateLimit-*` headers on every response. `/healthz`, `/`,
+`/docs`, `/redoc` and `/openapi.json` are never limited, because a host whose health
+checks hit a 429 kills the container. The bucket dictionary is swept and capped, or
+it would grow without limit under addresses that never repeat.
+
+Two limits on record: in process counters are correct at exactly one instance, and
+IP keying punishes shared addresses. It is a guard against a runaway script, not a
+security control. Correct distributed limiting needs shared state, which costs money.
+
+### 15.8 A trap found while verifying the proxy configuration
+
+**uvicorn trusts `X-Forwarded-For` by default.** `proxy_headers` defaults to `True`,
+and `forwarded_allow_ips` defaults to `127.0.0.1` (overridable through the
+`FORWARDED_ALLOW_IPS` environment variable). The `--proxy-headers` flag does not turn
+the behaviour on; it is already on.
+
+Measured, with a bucket of three:
+
+| Launch | Four distinct `X-Forwarded-For` values |
+|---|---|
+| `--proxy-headers --forwarded-allow-ips="*"` | four separate buckets |
+| no flags, requests from 127.0.0.1 | four separate buckets, because 127.0.0.1 is trusted by default |
+| no flags, four plain requests | one shared bucket, fourth request 429 |
+
+So the dangerous setting is `--forwarded-allow-ips="*"`, which trusts the header from
+whoever sent it: any caller who can reach the port directly can forge an address and
+the limiter stops limiting. The correct setting is the proxy's own address. Where
+nothing is in front, `--no-proxy-headers` is safer.
+
+Left unset behind a real proxy, every caller looks like the proxy and the limiter
+puts the whole world in one bucket. Both failures are quiet, which is why the
+Dockerfile documents the choice rather than picking one.
+
+### 15.9 The container
+
+Two stages. The first fetches the marts with the bucket credentials mounted as build
+**secrets**, which leave nothing in a layer, rather than build arguments, which are
+recorded in the image history for anyone who pulls it. The second copies the
+application and the marts into a slim runtime image that runs as a non root user and
+holds no credentials at all.
+
+The Parquet is baked in rather than fetched at boot, so a cold start is a local file
+open and costs the same whether the host bills by the hour or by the request. That is
+affordable only because Phase 5 chose Parquet: 1.4 MB fits in an image, 92 MB of
+DuckDB would not.
+
+`--host 0.0.0.0`, because the default of 127.0.0.1 accepts connections only from
+inside the container and the host's health check never arrives.
+
+**Not built or measured here**: this machine has no container runtime, so the
+Dockerfile is written and reviewed but has never been run. Its size and start time
+are unverified.
+
+### 15.10 Measured
+
+| | |
+|---|---|
+| Query layer, one company and concept | 4.3 ms |
+| Query layer, every annual value | 9.4 ms |
+| Over HTTP, including serialization | 7 to 13 ms |
+| Published marts | 12 files, 1.4 MB |
+| Tests | 264 Python, 422 dbt nodes |
+
+Verified over HTTP against production: Salesforce fiscal 2026 revenue 41,525m with
+four quarters summing to it, the fourth derived; Workday fiscal 2015 cost of revenue
+264,803,000 at medium confidence naming both summed tags; Atlassian fiscal 2019
+revenue 1,210.127m under IFRS, confirmed by the filing's own arcs.
+
+### 15.11 Not done
+
+No host is chosen, so nothing is deployed and no workflow builds or publishes the
+image. The static DuckDB-WASM page needs the repository to be public and is still
+outstanding. `format=csv` is deferred. `raw/config/` still has no lifecycle rule.
+
+## 16. Open decisions for later phases
 
 Phase 3 (mapping)
 - Initial canonical concept list (about 15).

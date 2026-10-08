@@ -58,12 +58,13 @@ Resolving that is what this project does.
 | 4. Data Sets | Built | Dimensional facts and custom tags from SEC's quarterly Data Sets |
 | 5. Marts | Built | Comparable income statement, balance sheet, cash flow, confidence report |
 | 6. Linkbase | Built | Checks every mapping against the filings' own declared arithmetic |
-| 7. API | Planned | FastAPI over the marts |
+| 7. API | Built | FastAPI over the Parquet marts, documented from config |
 
-Running today: four scheduled workflows, 367 dbt nodes and 169 Python tests,
+Running today: four scheduled workflows, 422 dbt nodes and 264 Python tests,
 408,213 facts from the JSON API plus 395,773 from the quarterly Data Sets, 16
-canonical concepts with a confidence level on every value, and **25,334 published
-figures** across 4,900 financial statements, at zero infrastructure cost.
+canonical concepts with a confidence level on every value, and **25,400 published
+figures** across 4,900 financial statements, served over HTTP at zero
+infrastructure cost.
 
 Every mapping is also checked against the filings' own declared arithmetic, from
 **45,647 calculation relationships** parsed out of 259 annual reports. That is what
@@ -72,7 +73,7 @@ own statement says so": 463 values labelled only *medium* are confirmed by the
 filer's arithmetic, and 15,709 labelled *high* have no arithmetic behind them at
 all.
 
-The marts are published as Parquet: **1.15 MB for all eight**, against a 57 MB
+The marts are published as Parquet: **1.4 MB for all twelve**, against a 92 MB
 database, so reading an income statement costs 101 KB and needs no warehouse.
 
 ```sql
@@ -172,6 +173,128 @@ To build the models against a local copy of the raw layer:
 ```bash
 cd transform
 RAW_ROOT=/path/to/raw uv run dbt build --profiles-dir . --target dev
+```
+
+### The API
+
+Needs nothing but the published Parquet, about 1.4 MB. Fetch it once, then run:
+
+```bash
+MARTS_PATH=./marts uv run xbrl-fetch-marts
+MARTS_PATH=./marts uv run uvicorn xbrl_reconcile.api.asgi:app --port 8000
+```
+
+Interactive documentation at `/docs`, the same thing laid out for reading at
+`/redoc`. Every parameter's allowed values and their meanings are generated from
+`config/vocabularies.yml`, so adding a company or a concept to config changes the
+documentation with no code change.
+
+Or in a container, with the data baked in so it needs no credentials to run:
+
+```bash
+docker build \
+  --secret id=b2_key_id,env=B2_INGEST_KEY_ID \
+  --secret id=b2_key,env=B2_INGEST_KEY \
+  -t xbrl-reconcile .
+docker run -p 8000:8000 xbrl-reconcile
+```
+
+Behind a load balancer, set `FORWARDED_ALLOW_IPS` to the proxy's address. uvicorn
+trusts `X-Forwarded-For` by default but only from `127.0.0.1`, so left unset every
+caller looks like the proxy and the rate limiter puts them all in one bucket. Do not
+set it to `*` unless nothing but that proxy can reach the port, because `*` trusts
+the header from whoever sent it.
+
+#### What a value looks like
+
+```bash
+curl 'localhost:8000/financials?tickers=WDAY&concepts=cost_of_revenue&from_year=2014&to_year=2014'
+```
+
+```json
+{
+  "ticker": "WDAY",
+  "concept": "cost_of_revenue",
+  "value": 264803000.0,
+  "unit": "USD",
+  "period_end": "2015-01-31",
+  "fiscal_year": 2015,
+  "calendar_year_equivalent": 2014,
+  "confidence": "medium",
+  "source_tag": "fsds:custom:CostOfRevenueSubscriptionAndSupport+us-gaap:TechnologyServicesCosts",
+  "evidence": "not_applicable",
+  "basis": "us_gaap",
+  "form": "10-K"
+}
+```
+
+Workday never reported a cost of revenue total for that year, only two components.
+`confidence: medium` says it was assembled and `source_tag` names both parts. Note
+also that `from_year=2014` found fiscal 2015: Workday's year ran February 2014 to
+January 2015, and a year range compares calendar years by default.
+
+#### A quarter no company files
+
+```bash
+curl 'localhost:8000/financials?tickers=CRM&concepts=revenue&period=quarter&from_year=2025&to_year=2025'
+```
+
+```
+Q1   9,829,000,000  high     us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax
+Q2  10,236,000,000  high     us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax
+Q3  10,259,000,000  high     us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax
+Q4  11,201,000,000  derived  derived:annual-nine_month
+```
+
+They sum to 41,525,000,000, which is the annual figure. The fourth is derived
+because the annual report covers the whole year instead of filing a fourth quarter,
+and it never pretends to be reported.
+
+#### Where the gaps are
+
+```bash
+curl 'localhost:8000/coverage?status=missing'
+```
+
+```
+total_rows 3
+INTU fy2026 cost_of_revenue      missing
+INTU fy2026 gross_profit         missing
+INTU fy2026 operating_expenses   missing
+```
+
+Three cells out of 5,056, all waiting on the SEC publishing a quarter. An API that
+can state its own gaps in three rows is a stronger claim than one that cannot answer
+the question. `/confidence?trust=check` is the companion: 147 of 4,900 statements
+where an identity fails or a line was ambiguous.
+
+#### A typo is an error, not an empty answer
+
+```bash
+curl 'localhost:8000/financials?tickers=GOOGL'   # 400
+```
+
+```json
+{
+  "error": "unknown ticker: 'GOOGL'",
+  "field": "ticker",
+  "value": "GOOGL",
+  "valid": ["ADBE", "ADSK", "BOX", "CRM", "CRWD", "..."]
+}
+```
+
+An empty result would be indistinguishable from a company that filed nothing.
+
+#### When not to use the API
+
+For the whole dataset rather than an answer, read the Parquet directly. DuckDB
+fetches only the byte ranges it needs, so this costs a few kilobytes of a 700 KB
+file and no server at all:
+
+```sql
+select ticker, fiscal_year, value, confidence
+from 'https://.../mart_financials.parquet'
+where concept = 'revenue' and period_kind = 'annual';
 ```
 
 ### The full pipeline
