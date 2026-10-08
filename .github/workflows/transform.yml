@@ -41,6 +41,14 @@ jobs:
       - name: Fetch previous database
         run: uv run xbrl-fetch-warehouse
 
+      # Every staging model that reads config reads it from a snapshot in the
+      # bucket, and a missing one is a compilation error that skips everything
+      # downstream. Writing them here means this run never depends on an ingestion
+      # run having happened, and a config edit reaches the warehouse on the next
+      # transform rather than waiting for a job that downloads SEC filings.
+      - name: Snapshot config
+        run: uv run xbrl-snapshot-config
+
       # dbt build runs each model and its tests together, skipping anything
       # downstream of a failure. RAW_ROOT is unset, so models read the bucket.
       # A full refresh rebuilds the incremental models from the raw layer. Needed

@@ -1,15 +1,18 @@
 import gzip
 import json
+import tempfile
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
 from tests.ingest.fakes import FakeSecApi, submissions_json
 from xbrl_reconcile.config import Company, ConfigError
 from xbrl_reconcile.ingest.http import HttpError
-from xbrl_reconcile.ingest.run import build_storage, run_ingestion
+from xbrl_reconcile.ingest.run import build_storage, run_ingestion, snapshot_config
 from xbrl_reconcile.ingest.storage import STATE_KEY, LocalStorage, S3Storage, config_snapshot_key
 from xbrl_reconcile.mappings import parse_mappings
+from xbrl_reconcile.vocabularies import parse_vocabularies
 
 MORNING = datetime(2026, 9, 16, 6, 15, 2, tzinfo=UTC)
 AFTERNOON = datetime(2026, 9, 16, 14, 0, 0, tzinfo=UTC)
@@ -323,3 +326,66 @@ def test_an_override_for_an_unknown_company_aborts_before_any_sec_request(tmp_pa
         run_ingestion([company(1, "AAA")], api, LocalStorage(tmp_path), MORNING, mappings=bad)
 
     assert api.calls == []
+
+
+VOCABULARIES = parse_vocabularies(
+    {
+        "vocabularies": {
+            "confidence": {
+                "description": "How a value was obtained.",
+                "values": [{"value": "high", "description": "A standard tag."}],
+            }
+        }
+    }
+)
+
+CONFIG_SNAPSHOTS = [
+    "companies",
+    "tag_mappings",
+    "tag_mapping_overrides",
+    "tag_components",
+    "tag_summable_axes",
+    "vocabularies",
+]
+
+
+def test_snapshot_config_writes_every_config_file(tmp_path):
+    """The transform workflow runs this alone, so it must cover all six.
+
+    A missing snapshot is a dbt compilation error that skips everything downstream,
+    which is why this asserts the whole set rather than that it wrote something.
+    """
+    storage = LocalStorage(tmp_path)
+
+    written = snapshot_config(
+        storage, "2026-09-16T061502Z", [company(1, "AAA")], MAPPINGS, VOCABULARIES
+    )
+
+    assert written == [config_snapshot_key(name, "2026-09-16T061502Z") for name in CONFIG_SNAPSHOTS]
+    assert all(storage.read(key) is not None for key in written)
+
+
+def test_snapshot_config_needs_no_sec_request():
+    """Config has nothing to do with downloading filings, which is the point of it."""
+    storage = LocalStorage(Path(tempfile.mkdtemp()))
+
+    snapshot_config(storage, "2026-09-16T061502Z", [company(1, "AAA")], MAPPINGS, VOCABULARIES)
+
+    # No api argument exists to pass, so this passing at all is the assertion.
+    assert storage.read(config_snapshot_key("vocabularies", "2026-09-16T061502Z")) is not None
+
+
+def test_the_ingestion_run_writes_the_same_set(tmp_path):
+    """Both callers write all six, so whichever ran last leaves a complete set."""
+    api = FakeSecApi(
+        submissions={"0000000001": submissions_json([("10-Q", "acc-1", "2026-09-01")])},
+        companyfacts={"0000000001": b"{}"},
+    )
+    storage = LocalStorage(tmp_path)
+
+    run_ingestion(
+        [company(1, "AAA")], api, storage, MORNING, mappings=MAPPINGS, vocabularies=VOCABULARIES
+    )
+
+    for name in CONFIG_SNAPSHOTS:
+        assert storage.read(config_snapshot_key(name, "2026-09-16T061502Z")) is not None, name

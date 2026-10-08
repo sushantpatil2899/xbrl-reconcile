@@ -87,11 +87,7 @@ def run_ingestion(
     # broken pipeline.
     state = {"last_run": run_ts, "companies": seen_by_cik}
     storage.write(STATE_KEY, json.dumps(state, indent=2, sort_keys=True).encode())
-    _write_config_snapshot(companies, storage, run_ts)
-    if mappings is not None:
-        _write_mapping_snapshots(mappings, storage, run_ts)
-    if vocabularies is not None:
-        _write_vocabulary_snapshot(vocabularies, storage, run_ts)
+    snapshot_config(storage, run_ts, companies, mappings, vocabularies)
     return result
 
 
@@ -110,13 +106,18 @@ def build_storage(env: Mapping[str, str]):
     raise ValueError(f"unknown STORAGE_BACKEND: {backend}")
 
 
+def _load_config() -> tuple[list[Company], MappingConfig, VocabularyConfig]:
+    """Load every config file, from one place, so the two entry points cannot drift."""
+    return (
+        load_companies(Path(os.environ.get("CONFIG_PATH", "config/companies.yml"))),
+        load_mappings(Path(os.environ.get("MAPPINGS_PATH", "config/tag_mappings.yml"))),
+        load_vocabularies(Path(os.environ.get("VOCABULARIES_PATH", "config/vocabularies.yml"))),
+    )
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    companies = load_companies(Path(os.environ.get("CONFIG_PATH", "config/companies.yml")))
-    mappings = load_mappings(Path(os.environ.get("MAPPINGS_PATH", "config/tag_mappings.yml")))
-    vocabularies = load_vocabularies(
-        Path(os.environ.get("VOCABULARIES_PATH", "config/vocabularies.yml"))
-    )
+    companies, mappings, vocabularies = _load_config()
     contact = _require(os.environ, "SEC_CONTACT_EMAIL")
     client = PoliteClient(user_agent=f"xbrl-reconcile {contact}")
     storage = build_storage(os.environ)
@@ -141,7 +142,59 @@ def main() -> int:
     return 1 if result.failed else 0
 
 
-def _write_config_snapshot(companies: list[Company], storage, run_ts: str) -> None:
+def snapshot_main() -> int:
+    """Write the config snapshots without ingesting anything.
+
+    The transform workflow runs this before dbt, so every staging model that reads
+    config finds a snapshot whether or not an ingestion run has happened. Without it
+    a missing snapshot is a compilation error that skips everything downstream, and
+    a config edit could not reach the warehouse until a job that downloads SEC
+    filings had run.
+    """
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    companies, mappings, vocabularies = _load_config()
+    # Same check the ingestion run makes. An override naming a company that is not
+    # configured does nothing at all, and says so nowhere unless it is reported.
+    for warning in validate_against_companies(mappings, companies):
+        log.warning("%s", warning)
+
+    storage = build_storage(os.environ)
+    run_ts = datetime.now(UTC).strftime(TIMESTAMP_FORMAT)
+    keys = snapshot_config(storage, run_ts, companies, mappings, vocabularies)
+    log.info("snapshotted %d config files at %s to %s", len(keys), run_ts, storage.location)
+    for key in keys:
+        log.info("  %s", key)
+    return 0
+
+
+def snapshot_config(
+    storage,
+    run_ts: str,
+    companies: list[Company],
+    mappings: MappingConfig | None = None,
+    vocabularies: VocabularyConfig | None = None,
+) -> list[str]:
+    """Write the config files to the bucket as data, and return the keys written.
+
+    Two callers, for two reasons. The ingestion run writes them so the bucket records
+    which company list drove its downloads. The transform workflow writes them so the
+    staging models that read config do not depend on an ingestion run having happened:
+    config has nothing to do with downloading filings, and that coupling meant a new
+    concept or company could not reach the warehouse until a job that fetches SEC
+    data had run.
+
+    newest_config_snapshot takes the newest file, so whichever caller ran last wins,
+    and both are current.
+    """
+    keys = [_write_config_snapshot(companies, storage, run_ts)]
+    if mappings is not None:
+        keys.extend(_write_mapping_snapshots(mappings, storage, run_ts))
+    if vocabularies is not None:
+        keys.append(_write_vocabulary_snapshot(vocabularies, storage, run_ts))
+    return keys
+
+
+def _write_config_snapshot(companies: list[Company], storage, run_ts: str) -> str:
     """Store the company list as data, so the bucket records which list produced this run."""
     rows = [
         {
@@ -162,31 +215,31 @@ def _write_config_snapshot(companies: list[Company], storage, run_ts: str) -> No
         }
         for c in companies
     ]
-    storage.write(config_snapshot_key("companies", run_ts), json.dumps(rows, indent=2).encode())
+    key = config_snapshot_key("companies", run_ts)
+    storage.write(key, json.dumps(rows, indent=2).encode())
+    return key
 
 
-def _write_mapping_snapshots(mappings: MappingConfig, storage, run_ts: str) -> None:
+def _write_mapping_snapshots(mappings: MappingConfig, storage, run_ts: str) -> list[str]:
     """Store the mapping rules as data. Every published value traces back to these."""
+    keys = []
     for name, rows in (
         ("tag_mappings", mappings.concept_rows()),
         ("tag_mapping_overrides", mappings.override_rows()),
         ("tag_components", mappings.component_rows()),
         ("tag_summable_axes", mappings.summable_axis_rows()),
     ):
-        storage.write(config_snapshot_key(name, run_ts), json.dumps(rows, indent=2).encode())
+        key = config_snapshot_key(name, run_ts)
+        storage.write(key, json.dumps(rows, indent=2).encode())
+        keys.append(key)
+    return keys
 
 
-def _write_vocabulary_snapshot(vocabularies: VocabularyConfig, storage, run_ts: str) -> None:
-    """Store the vocabularies as data, so the models can be tested against them.
-
-    This config has nothing to do with SEC data, so snapshotting it here means a
-    wording change waits for the next ingest run. That is at most a day, and worth
-    less than a second way of getting config into the bucket.
-    """
-    storage.write(
-        config_snapshot_key("vocabularies", run_ts),
-        json.dumps(vocabularies.rows(), indent=2).encode(),
-    )
+def _write_vocabulary_snapshot(vocabularies: VocabularyConfig, storage, run_ts: str) -> str:
+    """Store the vocabularies as data, so the models can be tested against them."""
+    key = config_snapshot_key("vocabularies", run_ts)
+    storage.write(key, json.dumps(vocabularies.rows(), indent=2).encode())
+    return key
 
 
 def _read_state(storage) -> dict:

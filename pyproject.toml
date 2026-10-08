@@ -13,6 +13,7 @@ dependencies = [
 
 [project.scripts]
 xbrl-ingest = "xbrl_reconcile.ingest.run:main"
+xbrl-snapshot-config = "xbrl_reconcile.ingest.run:snapshot_main"
 xbrl-check-ciks = "xbrl_reconcile.ingest.check_ciks:main"
 xbrl-ingest-datasets = "xbrl_reconcile.ingest.run_datasets:main"
 xbrl-ingest-linkbase = "xbrl_reconcile.ingest.run_linkbase:main"
