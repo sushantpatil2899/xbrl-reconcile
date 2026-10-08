@@ -1,5 +1,5 @@
 {#
-  What the ingestion job knows about each annual report's calculation linkbase.
+  What the ingestion job knows about each report's calculation linkbase.
 
   The same purpose as stg_fsds_quarters, for the same reason: arcs.json lands at a
   stable path per accession and is rewritten when the parser's output shape changes.

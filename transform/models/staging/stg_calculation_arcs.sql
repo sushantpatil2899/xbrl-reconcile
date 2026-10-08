@@ -1,6 +1,6 @@
 {#
   The filers' own arithmetic: one row per parent, child and weight, from the
-  calculation linkbase of every annual report.
+  calculation linkbase of every report, annual and quarterly.
 
   This is the only source in the project that says a tag is part of another tag.
   The presentation linkbase says where a tag sits; the Data Sets say what it was

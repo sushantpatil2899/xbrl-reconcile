@@ -1,4 +1,4 @@
-"""Land the calculation linkbase of every annual report we do not already have.
+"""Land the calculation linkbase of every report we do not already have.
 
 Which filings to fetch comes from the landed companyfacts snapshots rather than
 from the submissions ones, and the reason is a measurement. SEC puts only the most
@@ -8,6 +8,10 @@ its 18 annual reports. companyfacts carries the accession and form on every fact
 only for filings that reported XBRL, which is 74 filings for Salesforce and reaches
 2010. The mappings most in need of evidence are historical, so the source has to
 reach that far.
+
+Which forms count is config's decision, through report_types. This job narrowed that
+to annual reports until it was measured: three quarters of published values come from
+10-Qs, and a value can only be judged when the filing that reported it carries arcs.
 
 A filing is immutable once accepted, so anything already fetched is never fetched
 again, and a filing with no calculation linkbase is recorded as having none rather
@@ -53,10 +57,16 @@ DEFAULT_MAX_FILINGS = 300
 # so it is recorded rather than retried every month, and reported rather than hidden.
 NOT_ON_EDGAR = "404"
 
-# The annual forms among the report types config allows. Config decides which forms
-# count as a report at all; this narrows that to the ones covering a whole year,
-# because a 10-Q's linkbase describes the same tags as its year's 10-K.
-ANNUAL_FORMS = ("10-K", "10-K/A", "20-F", "20-F/A")
+# No form narrowing here any more: config's report_types decides, and every form it
+# counts as a report gets its linkbase fetched.
+#
+# This used to stop at annual reports, on the reasoning that a 10-Q's linkbase
+# describes the same tags as its year's 10-K. That is true of the tags and false of
+# the coverage. Three quarters of published values come from 10-Qs, and a value is
+# only judgeable when the filing that reported it carries arcs, so restricting to
+# annual reports left 23 percent of values judgeable and 16,817 unexamined. Adding
+# the quarterly reports is 793 more filings against 256 already fetched, about two
+# minutes at the rate the SEC allows, and takes the judgeable share to 89 percent.
 
 
 @dataclass
@@ -69,8 +79,8 @@ class LinkbaseRunResult:
     failed: dict[str, str] = field(default_factory=dict)
 
 
-def annual_report_accessions(companyfacts: bytes, forms: tuple[str, ...]) -> dict[str, str]:
-    """Accession to form, for every annual report that reported a fact."""
+def report_accessions(companyfacts: bytes, forms: tuple[str, ...]) -> dict[str, str]:
+    """Accession to form, for every filing of a counted form that reported a fact."""
     facts = json.loads(companyfacts).get("facts", {})
     found: dict[str, str] = {}
     for taxonomy in facts.values():
@@ -82,15 +92,15 @@ def annual_report_accessions(companyfacts: bytes, forms: tuple[str, ...]) -> dic
     return found
 
 
-def annual_forms_for(company: Company) -> tuple[str, ...]:
-    """The annual forms this company's config allows, so config still governs."""
-    return tuple(form for form in ANNUAL_FORMS if form in company.report_types)
+def forms_for(company: Company) -> tuple[str, ...]:
+    """The forms this company's config counts as a report. Config governs entirely."""
+    return tuple(company.report_types)
 
 
 def filings_to_fetch(
     companies: list[Company], storage: Storage, state: dict
 ) -> list[tuple[Company, str, str]]:
-    """Company, accession and form for annual reports not yet landed, oldest first."""
+    """Company, accession and form for filings not yet landed, oldest first."""
     ingest_state = _read_ingest_state(storage)
     todo: list[tuple[Company, str, str]] = []
     for company in companies:
@@ -106,7 +116,7 @@ def filings_to_fetch(
         if body is None:
             log.warning("%s companyfacts snapshot %s is missing", company.ticker, seen["snapshot"])
             continue
-        accessions = annual_report_accessions(gzip.decompress(body), annual_forms_for(company))
+        accessions = report_accessions(gzip.decompress(body), forms_for(company))
         for accession, form in sorted(accessions.items()):
             if accession not in state:
                 todo.append((company, accession, form))

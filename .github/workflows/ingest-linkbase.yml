@@ -1,10 +1,14 @@
 name: ingest-linkbase
 
 # A filing is immutable once accepted, so its calculation linkbase is fetched once
-# and never again. There is nothing to do until a company files a new annual report,
-# which happens once a year per company, so monthly is generous. The run is
-# idempotent: anything already landed, and anything found to have no calculation
-# linkbase at all, is skipped.
+# and never again. There is nothing to do until a company files a new report, which
+# is four times a year per company now that quarterly reports are included, so
+# monthly is still generous. The run is idempotent: anything already landed, and
+# anything found to have no calculation linkbase at all, is skipped.
+#
+# The backfill is about 793 quarterly filings against the 256 annual ones already
+# held. At the default cap of 300 that is three dispatches, or one with max_filings
+# raised. Either is a couple of minutes at the rate the SEC allows.
 on:
   schedule:
     - cron: "0 8 6 * *"

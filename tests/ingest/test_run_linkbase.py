@@ -8,8 +8,8 @@ from xbrl_reconcile.ingest.http import HttpError
 from xbrl_reconcile.ingest.linkbase import linkbase_key
 from xbrl_reconcile.ingest.run_linkbase import (
     LINKBASE_STATE_KEY,
-    annual_forms_for,
-    annual_report_accessions,
+    forms_for,
+    report_accessions,
     run_linkbase_ingestion,
 )
 from xbrl_reconcile.ingest.storage import STATE_KEY, LocalStorage, snapshot_key
@@ -83,7 +83,7 @@ def test_only_annual_reports_are_fetched():
         {"accn": "0001108524-18-000087", "form": "10-Q"},
         {"accn": "0001108524-18-000099", "form": "DEF 14A"},
     ]
-    accessions = annual_report_accessions(
+    accessions = report_accessions(
         json.dumps({"facts": {"us-gaap": {"R": {"units": {"USD": entries}}}}}).encode(),
         ("10-K", "10-K/A", "20-F", "20-F/A"),
     )
@@ -93,8 +93,10 @@ def test_only_annual_reports_are_fetched():
 
 def test_config_still_decides_which_forms_count():
     """A company configured without 20-F never has one fetched."""
-    assert annual_forms_for(company(report_types=("10-K", "10-Q"))) == ("10-K",)
-    assert "20-F" in annual_forms_for(company(report_types=("10-K", "20-F")))
+    # Config decides entirely now. The job used to drop quarterly reports here, which
+    # left three quarters of published values with no arcs to be judged against.
+    assert forms_for(company(report_types=("10-K", "10-Q"))) == ("10-K", "10-Q")
+    assert "20-F" in forms_for(company(report_types=("10-K", "20-F")))
 
 
 def test_a_landed_filing_stores_the_xml_and_the_flattened_arcs(tmp_path):
