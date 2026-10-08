@@ -7,9 +7,15 @@ models:
       which tag is a part of which, with what weight, in which network. The only
       source in the project that states a tag is a component of another.
     tests:
+      # The qualified tag, not the local name. A name is only unique within its
+      # taxonomy, and filers do reuse one: DisposalGroupIncludingDiscontinued
+      # OperationDeferredRevenue exists as both a us-gaap tag and a company's own,
+      # and Liabilities as both us-gaap and ifrs-full. Two such arcs in one role are
+      # different relationships, and this test called them a duplicate.
       - dbt_utils.unique_combination_of_columns:
           arguments:
-            combination_of_columns: [accession, role, parent_tag, child_tag]
+            combination_of_columns:
+              [accession, role, parent_qualified_tag, child_qualified_tag]
     columns:
       - name: accession
         tests: [not_null]
