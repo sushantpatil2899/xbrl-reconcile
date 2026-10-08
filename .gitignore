@@ -25,3 +25,7 @@ transform/logs/
 transform/*.duckdb
 transform/*.duckdb.wal
 transform/.user.yml
+
+# The published marts are fetched at deploy time, not committed.
+docs/site/*.parquet
+docs/site/_index.json

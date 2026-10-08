@@ -297,6 +297,30 @@ from 'https://.../mart_financials.parquet'
 where concept = 'revenue' and period_kind = 'annual';
 ```
 
+### The query page
+
+A single HTML file that loads the Parquet with DuckDB compiled to WebAssembly and
+runs the queries **in the reader's browser**. No server, no account, no cold start.
+
+```bash
+MARTS_PATH=docs/site uv run xbrl-fetch-marts
+cd docs/site && python3 -m http.server 8000
+```
+
+It shows four things: all 28 companies lined up on one calendar year with the
+confidence on every figure, one company's values with the XBRL tag behind each,
+what to distrust, and a query box.
+
+Freshness is handled by treating `_index.json` as the version marker. It is fetched
+with `no-store`, and each Parquet is requested as `?v=<published_at>`, so a new
+publish is a new cache key while an unchanged one is served from cache. The page
+prints the publish time, so staleness is visible rather than silent.
+
+`.github/workflows/pages.yml` deploys the page and the current marts together, and
+then asserts the live `_index.json` matches the bucket. It is inert until the
+repository variable `PAGES_ENABLED` is set to `true`, which needs the repository
+public or a plan allowing Pages from a private one.
+
 ### The full pipeline
 
 Needs a Backblaze B2 account (free tier), an HCP Terraform account for state,

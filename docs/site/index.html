@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>xbrl-reconcile</title>
+<meta name="description" content="Comparable financial statements for 28 software companies, from their own SEC filings, with the confidence of every number beside it.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <h1>xbrl-reconcile</h1>
+  <p class="lede">
+    Comparable financial statements for 28 software companies, drawn from their own
+    SEC filings, with how sure we are about every number published beside it.
+  </p>
+  <p class="freshness">
+    Data published <strong id="as-of">loading</strong>.
+    Queried in your browser: nothing here runs on a server.
+  </p>
+</header>
+
+<nav id="tabs">
+  <button data-view="compare" class="active">Compare</button>
+  <button data-view="company">One company</button>
+  <button data-view="quality">What to distrust</button>
+  <button data-view="sql">SQL</button>
+</nav>
+
+<main>
+  <section id="status" class="status">Starting DuckDB in your browser.</section>
+
+  <section id="compare" class="view active">
+    <h2>One calendar year, 28 companies</h2>
+    <p>
+      These companies close their books in six different months, so their own year
+      labels do not line up. The <code>calendar_year_equivalent</code> column puts
+      them in the same row. Every figure carries how it was obtained, and
+      <span class="tag derived">derived</span> means we computed it because the
+      company never tagged it.
+    </p>
+    <label>Calendar year <select id="compare-year"></select></label>
+    <div id="compare-table" class="table-wrap"></div>
+  </section>
+
+  <section id="company" class="view">
+    <h2>Where one company's numbers came from</h2>
+    <p>
+      Every value with the XBRL tag behind it. Tags joined by <code>+</code> mean the
+      company reported the parts and never a total, so we added them up and said so.
+    </p>
+    <label>Company <select id="company-ticker"></select></label>
+    <div id="company-table" class="table-wrap"></div>
+  </section>
+
+  <section id="quality" class="view">
+    <h2>What to distrust</h2>
+    <p>
+      Mislabelling is expected here, not a failure. A page that shows its own weak
+      spots is a stronger claim than one that does not.
+    </p>
+    <div id="quality-summary" class="cards"></div>
+    <h3>Statements worth a human look</h3>
+    <div id="quality-check" class="table-wrap"></div>
+    <h3>Gaps we could still fill</h3>
+    <div id="quality-gaps" class="table-wrap"></div>
+    <h3>Values the filing's own arithmetic contradicts</h3>
+    <p class="aside">
+      The filer treats this tag as a part of something we also call that concept's
+      total. Not necessarily a wrong figure, but a mapping worth reading twice.
+    </p>
+    <div id="quality-contradicted" class="table-wrap"></div>
+  </section>
+
+  <section id="sql" class="view">
+    <h2>Ask it yourself</h2>
+    <p>
+      The same twelve tables the API serves. Type a query; it runs here, in this tab.
+    </p>
+    <textarea id="sql-input" rows="7" spellcheck="false"></textarea>
+    <button id="sql-run">Run</button>
+    <div id="sql-result" class="table-wrap"></div>
+  </section>
+</main>
+
+<footer>
+  <p>
+    Built from the SEC's own XBRL filings. The marts are Parquet, so you can skip
+    this page entirely and query them from anywhere:
+  </p>
+  <pre><code>select ticker, fiscal_year, value, confidence
+from 'mart_financials.parquet'
+where concept = 'revenue' and period_kind = 'annual';</code></pre>
+</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

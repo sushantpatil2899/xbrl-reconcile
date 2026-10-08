@@ -1805,6 +1805,95 @@ No host is chosen, so nothing is deployed and no workflow builds or publishes th
 image. The static DuckDB-WASM page needs the repository to be public and is still
 outstanding. `format=csv` is deferred. `raw/config/` still has no lifecycle rule.
 
+### 15.12 The static query page
+
+A single HTML file plus one module and a stylesheet, at `docs/site/`. DuckDB compiled
+to WebAssembly fetches the published Parquet over HTTP and runs the queries in the
+reader's browser. No server, no account, no cold start, and it costs nothing to keep
+running because static files are not a service.
+
+Four views, chosen so the page shows what the project did rather than being a SQL
+console: all 28 companies on one calendar year with the confidence on every figure,
+one company's values with the XBRL tag behind each, what to distrust, and a query
+box last for anyone who does want SQL.
+
+**Freshness.** The data is not baked into the page, so a new publish is picked up on
+the next load. The risk is a browser or CDN cache serving an old file with nothing on
+screen to say so. `_index.json` is therefore the version marker: about a kilobyte,
+already carrying `published_at`, fetched with `no-store` so that one request always
+reaches the server, and each Parquet requested as `?v=<published_at>`. A new publish
+is a new cache key; an unchanged one is served from cache. This is correct whatever
+the CDN does, which means its semantics do not have to be known. The page also prints
+the publish time, so staleness is visible.
+
+**Deployment.** `pages.yml` chains after `transform` and uploads the page and the
+current marts as one artifact, so they share an origin (no CORS rules on the bucket)
+and cannot drift apart. It then fetches the live `_index.json` and asserts it matches
+the bucket, because a deploy that silently serves a stale artifact would otherwise be
+discovered by someone reading wrong numbers. The job is guarded by a repository
+variable rather than commented out, so enabling it is a variable flip.
+
+**Blocked.** Pages from a private repository needs a paid plan. The repository is
+private and `has_pages` is false, so the workflow is written and inert.
+
+### 15.13 Range requests, measured rather than assumed
+
+Two findings, both from measuring something I had been asserting.
+
+**`python -m http.server` does not implement Range.** It answers 200 with the whole
+file. A local test against it would have shown the page working while every query
+downloaded everything, so a range capable server was written to check properly.
+
+**Range requests do work, and save less than claimed.** One clean page load, all
+three views:
+
+| | |
+|---|---|
+| Parquet requests | 21 |
+| Bytes transferred | 743,568 |
+| The four files it touched | 957,056 bytes on disk |
+| The whole published set | 1,420,288 bytes |
+
+So about 22 percent less than fetching the four files it used, not the order of
+magnitude "a few kilobytes out of a 700 KB file" suggests. That phrasing is true of a
+single narrow query and misleading about a page that runs six.
+
+**Why pruning does not help here: `mart_financials` is a single row group.** At 25,400
+rows it is far below DuckDB's default row group size, so the whole 710 KB file is one
+group whose ticker statistics span ADBE to ZS, and nothing can be skipped. Writing
+smaller row groups and sorting by ticker in the publisher would make pruning effective,
+at some cost in compression and metadata. Recorded as an open decision rather than
+done, because at this size the saving is small and the WebAssembly engine download
+dominates either way.
+
+Measured load time, from page open to all three views rendered: **363 ms** with the
+engine cached, and 1.7 to 1.9 seconds otherwise. The engine itself is fetched inside
+the worker, whose resource timings are not on the main thread's performance timeline,
+so its byte size was not measurable from the page and is not quoted here.
+
+### 15.14 Traps found while building the page
+
+**A relative URL does not resolve inside the DuckDB worker.** The worker is created
+from a blob, so it has no document to resolve against, and
+`registerFileURL("mart_x.parquet", "mart_x.parquet?v=...")` fails with
+`Invalid URL` rather than a 404, which reads like a broken query. URLs are made
+absolute against `location.href`.
+
+**An alias can shadow the column it is ordered by.** `revenue_confidence as "revenue"`
+meant `order by revenue desc` bound to the confidence string, so the comparison table
+sorted alphabetically by confidence while looking plausible. Caught by reading the
+rendered numbers rather than by any error.
+
+**Not every line on a statement is money.** Dividing by a million to show figures in
+millions rendered earnings per share of 7.80 as 0. The query now scales only where
+`unit = 'USD'` and shows the unit beside the value, which is the same rule the API
+follows.
+
+**All 24 contradicted values are quarterly.** The first version of that view filtered
+to annual periods and showed nothing at all, which looked like a clean bill of health.
+They are Workday net income tagged `us-gaap:ProfitLoss`, which includes noncontrolling
+interests.
+
 ## 16. Open decisions for later phases
 
 Phase 3 (mapping)

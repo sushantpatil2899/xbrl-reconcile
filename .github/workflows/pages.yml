@@ -1,0 +1,73 @@
+name: pages
+
+# Publishes the static query page together with the current marts, so the page and
+# the data it reads can never drift apart. Chained after transform the same way
+# transform is chained after ingest.
+#
+# Inert until Pages is turned on. The job is guarded by a repository variable rather
+# than by commenting the file out, so enabling it is a variable flip and not a code
+# change. Set PAGES_ENABLED to "true" once the repository is public, or on a plan
+# that allows Pages from a private repository.
+#
+# Note what publishing means here: a Pages site is public even when the repository is
+# private, so this exposes the data. That is intended when the project goes public and
+# worth a deliberate decision before then.
+
+on:
+  workflow_run:
+    workflows: [transform]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    if: vars.PAGES_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    env:
+      STORAGE_BACKEND: b2
+      B2_INGEST_KEY_ID: ${{ secrets.B2_INGEST_KEY_ID }}
+      B2_INGEST_KEY: ${{ secrets.B2_INGEST_KEY }}
+      B2_BUCKET: ${{ vars.B2_BUCKET }}
+      B2_ENDPOINT: ${{ vars.B2_ENDPOINT }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.1.0
+      - run: uv sync --locked --no-dev
+
+      # Beside the page, so they share an origin and the browser needs no CORS rules
+      # on the bucket. The fetch verifies every file's size and row count against the
+      # published index, so a truncated download fails here rather than being served.
+      - name: Fetch the marts into the site
+        run: MARTS_PATH=docs/site uv run xbrl-fetch-marts
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs/site
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+      # Proof rather than trust. The page reads _index.json to decide which version of
+      # each Parquet to request, so if a deploy silently served a stale artifact the
+      # page would show old numbers with nothing to say so. This compares what is live
+      # against what is in the bucket, and fails loudly when they differ.
+      - name: Check the published page is as fresh as the bucket
+        run: |
+          live=$(curl -fsSL "${{ steps.deploy.outputs.page_url }}_index.json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["published_at"])')
+          want=$(python3 -c 'import json; print(json.load(open("docs/site/_index.json"))["published_at"])')
+          echo "live: $live"
+          echo "bucket: $want"
+          test "$live" = "$want"
