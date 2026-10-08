@@ -40,10 +40,18 @@ models:
       - name: value
         tests: [not_null]
       - name: source_tag
+        description: >
+          Which subtraction produced the quarter. Three holes are filled by the same
+          arithmetic: the fourth quarter from the year less the nine months, and on
+          the cash flow statement the second and third from the cumulative periods
+          either side, which a 10-Q reports instead of the discrete quarter.
         tests:
           - accepted_values:
               arguments:
-                values: ["derived:annual-nine_month"]
+                values:
+                  - "derived:annual-nine_month"
+                  - "derived:nine_month-half"
+                  - "derived:half-quarter"
       - name: confidence
         tests:
           - accepted_values:
