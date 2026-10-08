@@ -118,5 +118,17 @@ select
 from arcs
 join {{ ref('stg_companies') }} as companies on companies.cik10 = arcs.cik10
 join {{ ref('stg_linkbase_filings') }} as state on state.accession = arcs.accession
+-- One relationship per filing, role, pair and weight. A filer can list the same
+-- parent and child twice in one role at different positions in the layout, which is
+-- the same relationship written down twice: counting it twice would inflate
+-- declared_components and the confirmation counts built on it. Weight is kept in the
+-- grain because it is semantics rather than presentation, so a filer that declares
+-- the same pair with two different weights contradicts itself and both rows survive
+-- to say so. Only arc_order, which is where the line sits, is discarded.
+qualify row_number() over (
+    partition by arcs.accession, arcs.role, parent_qualified_tag, child_qualified_tag,
+                 arcs.weight
+    order by arcs.arc_order
+) = 1
 
 {% endif %}

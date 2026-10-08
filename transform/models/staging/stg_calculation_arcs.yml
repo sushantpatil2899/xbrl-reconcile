@@ -12,10 +12,15 @@ models:
       # OperationDeferredRevenue exists as both a us-gaap tag and a company's own,
       # and Liabilities as both us-gaap and ifrs-full. Two such arcs in one role are
       # different relationships, and this test called them a duplicate.
+      #
+      # Weight is in the grain because it is semantics: a filer declaring the same
+      # pair with two different weights is contradicting itself, and both rows have
+      # to survive to show it. The same pair at two positions in the layout is one
+      # relationship written twice, and the model drops the repeat.
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns:
-              [accession, role, parent_qualified_tag, child_qualified_tag]
+              [accession, role, parent_qualified_tag, child_qualified_tag, weight]
     columns:
       - name: accession
         tests: [not_null]
