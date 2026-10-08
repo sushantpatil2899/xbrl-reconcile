@@ -1894,7 +1894,76 @@ to annual periods and showed nothing at all, which looked like a clean bill of h
 They are Workday net income tagged `us-gaap:ProfitLoss`, which includes noncontrolling
 interests.
 
-## 16. Open decisions for later phases
+## 16. Open decisions reviewed
+
+Reviewed on 2026-10-08 by measuring each one rather than re-reading the note. Three
+of the entries below turned out to describe something different from what was there,
+and two resolved to no work.
+
+### 16.1 Deriving the other quarters: built
+
+The gap was almost entirely on the cash flow statement, where a 10-Q reports only the
+year to date and never the discrete quarter: 1,335 recoverable against 12 on the
+income statement. Q3 is the nine months less the half and Q2 the half less the first
+quarter, the same arithmetic that already produced Q4.
+
+The concern on record was that chaining subtractions needs two filings to agree. That
+is right, and measuring turned it into a rule. Where filers did tag the quarter the
+subtraction has a known answer:
+
+| pairing | neither input restated | either restated |
+|---|---|---|
+| half less the quarter | 99.2% land within 1% | 80.1% |
+| year less nine months | 98.7% | 34.5% |
+
+So neither input may be restated. The guard costs 300 fourth quarters that used to be
+published and about two thirds of those were wrong, which is the trade this project
+already made when Workday's overstated operating expenses became gaps.
+
+Result: 1,304 quarters recovered, cash flow quarters from 2,097 to 3,345.
+`quarters_match_when_also_filed` keeps measuring the method, because a recovered
+quarter has no filed counterpart and the sum to the year test collapses to an
+identity whatever the inputs are.
+
+### 16.2 A lifecycle rule for `raw/config/`: not needed
+
+Measured rather than estimated. One full set of config snapshots is **49,856 bytes**,
+written twice a day by the ingest and transform runs, which is **36 MB a year**
+against a 10 GB free tier. That is 0.36 percent of the tier per year.
+
+No rule. Expiring unique keys needs `days_from_uploading_to_hiding`, which would hide
+the newest snapshot too if the pipeline ever sat idle past the window, breaking the
+build in a way that is hard to diagnose. Trading a real failure mode for a third of a
+percent of a free tier is a bad trade.
+
+If growth ever matters, the right fix is not expiry but **writing a snapshot only
+when the content changed**. Config changes perhaps ten times a year, so that would cut
+730 writes a year to roughly ten and make the snapshot list a genuine change history
+rather than a heartbeat. It needs a small index file holding each config's current
+hash, since the Storage protocol reads and writes keys and does not list them.
+
+### 16.3 Custom tags beyond a declared sum: nothing to propose
+
+The idea was that the calculation linkbase could find what inspection currently
+finds: a custom tag whose arc parent is a concept we map is a declared part of it, so
+a filer reporting a concept only as custom parts could be detected rather than
+stumbled on.
+
+The mechanism works and finds 279 such custom tags. But joined to the gaps it would
+close, it returns **zero rows**, because coverage is at **3 missing cells out of
+5,056** and all three are Intuit's fiscal 2026 waiting on the SEC publishing a
+quarter. There is nothing for it to propose today.
+
+`mart_mapping_evidence` also already carries a `candidate` verdict for this question
+at the statement level, and it currently names one tag: Intuit's
+`us-gaap:CostsAndExpenses`, labelled "Total costs and expenses".
+
+So this is not deferred for cost, it is **closed for want of a problem**. It becomes
+worth building when coverage opens up again, which adding companies or a new sector
+would do. Decision 2's quarterly linkbase backfill triples the arcs available and
+makes it cheaper to build then.
+
+## 17. Open decisions for later phases
 
 Phase 3 (mapping)
 - Initial canonical concept list (about 15).
@@ -1909,11 +1978,7 @@ labels; Q4 by subtraction on additive concepts only.
 
 Left open by Phase 5, in rough order of value:
 
-- **Deriving the other quarters.** A missing first, second or third quarter could
-  be filled the same way, as the difference of two cumulative periods. Cash flow
-  quarters are patchy for every company, so this would fill real gaps. Deferred
-  because those gaps are a tagging choice rather than structural, and chaining
-  subtractions needs two figures from two filings to agree.
+- **Deriving the other quarters: done**, see 16.1.
 - **Whether incoherence should force a `check` trust label.** It does not today:
   29 statements are labelled `reported` while carrying a line newer than the filing
   they were read from. The numbers are not in doubt there, only their provenance,
