@@ -1,0 +1,23 @@
+version: 2
+
+models:
+  - name: stg_label_hints
+    description: >
+      One row per concept and expected label phrase. Declaring what a line is called
+      lets the pipeline question a mapping it already has, which is the case reading
+      a candidate list never covers.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [concept, phrase]
+    columns:
+      - name: concept
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_tag_mappings')
+                field: concept
+      - name: phrase
+        description: Lowercased, and matched as a substring of the filer's own label.
+        tests: [not_null]

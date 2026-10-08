@@ -229,6 +229,7 @@ def _write_mapping_snapshots(mappings: MappingConfig, storage, run_ts: str) -> l
         ("tag_components", mappings.component_rows()),
         ("tag_summable_axes", mappings.summable_axis_rows()),
         ("tag_scale_overrides", mappings.scale_override_rows()),
+        ("tag_label_hints", mappings.label_hint_rows()),
     ):
         key = config_snapshot_key(name, run_ts)
         storage.write(key, json.dumps(rows, indent=2).encode())

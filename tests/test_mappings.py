@@ -1,4 +1,5 @@
 from datetime import date
+from pathlib import Path
 
 import pytest
 
@@ -514,6 +515,8 @@ def test_a_flag_written_as_text_is_rejected_rather_than_read_as_true():
             parse_mappings(make_config(concepts))
 
 
+MAPPINGS = Path(__file__).parent.parent / "config" / "tag_mappings.yml"
+
 SCALE_BASE = {
     "concepts": {
         "shares_diluted": {
@@ -594,3 +597,50 @@ def test_a_backwards_period_window_is_rejected():
 def test_a_misspelled_scale_key_is_an_error_rather_than_ignored():
     with pytest.raises(ConfigError, match="unknown keys"):
         parse_mappings(with_scale(multiply_bye=1000))
+
+
+def with_hints(hints):
+    concept = dict(SCALE_BASE["concepts"]["shares_diluted"])
+    concept["label_hints"] = hints
+    return {"concepts": {"shares_diluted": concept}}
+
+
+def test_label_hints_are_lowercased_so_matching_is_a_plain_substring_test():
+    config = parse_mappings(with_hints(["Total Operating Expenses", "  Total Expenses  "]))
+
+    assert config.concepts["shares_diluted"].label_hints == (
+        "total operating expenses",
+        "total expenses",
+    )
+
+
+def test_label_hint_rows_are_one_per_concept_and_phrase():
+    config = parse_mappings(with_hints(["gross profit", "gross margin"]))
+
+    assert config.label_hint_rows() == [
+        {"concept": "shares_diluted", "phrase": "gross profit"},
+        {"concept": "shares_diluted", "phrase": "gross margin"},
+    ]
+
+
+def test_a_concept_without_hints_produces_no_rows():
+    """Hints are opt in: most concepts have a label space too wide to list."""
+    assert parse_mappings(SCALE_BASE).label_hint_rows() == []
+
+
+def test_an_empty_hint_list_is_rejected_rather_than_treated_as_absent():
+    with pytest.raises(ConfigError, match="must be a non empty list"):
+        parse_mappings(with_hints([]))
+
+
+def test_a_hint_that_is_not_a_phrase_is_rejected():
+    with pytest.raises(ConfigError, match="must be a phrase"):
+        parse_mappings(with_hints(["gross profit", 7]))
+
+
+def test_the_real_config_declares_hints_for_the_concepts_that_needed_them():
+    """Workday's error was in operating expenses, found by investigation not by code."""
+    config = load_mappings(MAPPINGS)
+
+    assert "operating expenses" in config.concepts["operating_expenses"].label_hints
+    assert config.concepts["gross_profit"].label_hints == ("gross profit",)

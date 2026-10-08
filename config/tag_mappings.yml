@@ -36,6 +36,7 @@ concepts:
 
   cost_of_revenue:
     statement: income_statement
+    label_hints: ["cost of revenue", "costs of revenue", "cost of goods", "cost of sales", "cost of service", "costs of service"]
     unit: USD
     tags:
       - { tag: "us-gaap:CostOfRevenue", confidence: high }
@@ -51,6 +52,7 @@ concepts:
 
   gross_profit:
     statement: income_statement
+    label_hints: ["gross profit"]
     unit: USD
     tags:
       - { tag: "us-gaap:GrossProfit", confidence: high }
@@ -58,6 +60,7 @@ concepts:
 
   operating_expenses:
     statement: income_statement
+    label_hints: ["operating expenses", "total expenses"]
     unit: USD
     # Operating expenses excluding cost of revenue. us-gaap:CostsAndExpenses is
     # deliberately absent: it includes cost of revenue, so it is a different

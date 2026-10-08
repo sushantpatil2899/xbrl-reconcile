@@ -26,7 +26,15 @@ from xbrl_reconcile.config import Company, ConfigError
 CONFIDENCE_LEVELS = {"high", "medium", "low"}
 STATEMENTS = {"income_statement", "balance_sheet", "cash_flow"}
 
-CONCEPT_KEYS = {"statement", "unit", "tags", "components", "optional", "additive"}
+CONCEPT_KEYS = {
+    "statement",
+    "unit",
+    "tags",
+    "components",
+    "optional",
+    "additive",
+    "label_hints",
+}
 COMPONENT_KEYS = {"tags", "confidence", "note"}
 SUMMABLE_AXIS_KEYS = {"axis", "confidence", "note"}
 SCALE_OVERRIDE_KEYS = {
@@ -104,6 +112,17 @@ class ConceptSpec:
     # subtracted. Earnings per share and a weighted average share count both look
     # like ordinary numbers, so this cannot be inferred from the facts either.
     additive: bool = True
+    # Phrases a filer's own presentation label is expected to contain for a tag
+    # mapped here. A tag whose every label matches none of them is a mapping worth
+    # reading twice: Workday labels us-gaap:OperatingExpenses "Total costs and
+    # expenses" while 26 other filers label it "Total operating expenses", and its
+    # figure therefore includes cost of revenue. Nothing in the numbers says so.
+    #
+    # Checked as "no label matches", not "some label is rejected", because filers
+    # reuse one tag across contexts and carry several labels for it. Workday's
+    # cost of goods tag carries "Total costs and expenses" alongside two sound
+    # labels, and flagging on any bad label would call that an error when it is not.
+    label_hints: tuple[str, ...] = ()
     # Where this line sits on its statement, taken from the order the concepts
     # appear in the config file. Inside a concept the order of `tags` already means
     # priority, so order carrying meaning is the file's existing convention.
@@ -200,6 +219,14 @@ class MappingConfig:
             for concept in self.concepts.values()
             for component in concept.components
             for tag in component.tags
+        ]
+
+    def label_hint_rows(self) -> list[dict]:
+        """One row per concept and expected phrase, so the check is a join."""
+        return [
+            {"concept": concept.name, "phrase": phrase}
+            for concept in self.concepts.values()
+            for phrase in concept.label_hints
         ]
 
     def scale_override_rows(self) -> list[dict]:
@@ -423,6 +450,7 @@ def _parse_concept(name: str, raw: dict, line: int = 0) -> ConceptSpec:
         unit=str(raw["unit"]),
         tags=tuple(tags),
         components=components,
+        label_hints=_parse_label_hints(name, raw),
         optional=_parse_flag(name, raw, "optional", default=False),
         additive=_parse_flag(name, raw, "additive", default=True),
         position=line,
@@ -552,6 +580,25 @@ def _split_qualified_tag(qualified: str, where: str) -> tuple[str, str]:
             f"{where}: tag '{qualified}' needs a taxonomy prefix, for example us-gaap:Revenues"
         )
     return taxonomy, tag
+
+
+def _parse_label_hints(name: str, raw: dict) -> tuple[str, ...]:
+    """Phrases a filer's own label for this concept is expected to contain.
+
+    Lowercased here so the comparison downstream is a plain substring test and the
+    config can be written the way a person reads a statement.
+    """
+    hints = raw.get("label_hints")
+    if hints is None:
+        return ()
+    if not isinstance(hints, list) or not hints:
+        raise ConfigError(f"concept {name}: label_hints must be a non empty list")
+    cleaned = []
+    for hint in hints:
+        if not isinstance(hint, str) or not hint.strip():
+            raise ConfigError(f"concept {name}: label hint must be a phrase, got {hint!r}")
+        cleaned.append(hint.strip().lower())
+    return tuple(cleaned)
 
 
 def _parse_flag(name: str, raw: dict, key: str, default: bool) -> bool:
