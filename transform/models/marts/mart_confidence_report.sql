@@ -81,7 +81,7 @@ counted as (
         count(*) filter (where candidates_disagree) as ambiguous_lines,
         count(*) filter (where was_restated) as restated_lines,
         count(*) filter (where is_coherent = false) as incoherent_lines,
-        count(*) filter (where evidence = 'confirmed') as confirmed_lines,
+        count(*) filter (where evidence in ('confirmed', 'equivalent')) as confirmed_lines,
         count(*) filter (where evidence = 'contradicted') as contradicted_lines,
         max(statement_accession) as statement_accession,
         max(statement_form) as statement_form,
@@ -149,8 +149,9 @@ select
     checked.restated_lines,
     checked.incoherent_lines,
     -- Both counts, because a zero contradiction count alone cannot be told from a
-    -- statement nobody checked. Most values come from 10-Qs, whose calculation
-    -- linkbases are not fetched, so unexamined is the common case rather than a gap.
+    -- statement nobody checked. Since the quarterly backfill most values are checked,
+    -- so unexamined is now the exception: it means the filing carries no calculation
+    -- linkbase at all, which 28 of them do not.
     checked.confirmed_lines,
     checked.contradicted_lines,
     checked.identity_gap,

@@ -96,22 +96,31 @@ deduplicated as (
 ),
 
 {#- Whether the filing that reported a value declares its own tag to be a part of
-    something we also call that concept's total.
+    something we also call that concept's total, and if so whether the part and the
+    total are actually different numbers.
 
-    Joined per filing, not per company, and the difference is not cosmetic: asking
-    whether a company ever declared the relationship flags 115 values, while asking
-    whether the filing in hand declares it flags 24. Salesforce had no
-    noncontrolling interest in some years, so StockholdersEquity genuinely was its
-    total equity in those filings, and the same tag was a component in others.
-    Aggregating across a company's filings would publish 91 false accusations. -#}
-contradicted as (
+    Joined per filing and per period, and neither is cosmetic. Asking whether a
+    company ever declared the relationship flags 115 values, while asking whether the
+    filing in hand declares it flags 27: Salesforce had no noncontrolling interest in
+    some years, so StockholdersEquity genuinely was its total equity in those filings
+    and a component in others, and aggregating would publish 91 false accusations.
 
-    select distinct
+    Per period matters for the same reason one layer down. Workday declares net income
+    as profit or loss less the accretion on redeemable preferred, and that accretion
+    is 568,000 in fiscal 2013 and 0.0 in fiscal 2014. The arc is identical in both.
+    Only the period's own figures separate a real contradiction from a part that is
+    its own total, which is what int_arc_separation measures. -#}
+declared_part as (
+
+    select
         accession,
-        child_concept as concept,
-        child_qualified_tag as qualified_tag
-    from {{ ref('int_calculation_arcs') }}
-    where is_same_concept
+        concept,
+        qualified_tag,
+        period_start,
+        period_end,
+        part_equals_total,
+        separation
+    from {{ ref('int_arc_separation') }}
 
 ),
 
@@ -191,16 +200,19 @@ select
             <= {{ var('restatement_tolerance') }} * greatest(abs(deduplicated.value), 1)
     end as is_coherent,
     statements.covers_whole_statement as statement_covers_whole,
-    -- What the filers' own arithmetic says about the tag behind this number. A
-    -- contradiction is not necessarily a wrong figure: Workday's 24 contradicted
-    -- values are identical to the alternative, because it has no noncontrolling
-    -- interest for the arithmetic to separate.
+    -- What the filers' own arithmetic says about the tag behind this number.
+    -- `equivalent` is the case the old structural test called a contradiction: the
+    -- filer does declare the tag a part, and its own figures make the part equal the
+    -- whole, so nothing is in doubt. `contradicted` now means the two really differ.
     case
         when deduplicated.confidence = 'derived'
             or deduplicated.source_tag like '%+%'
             or deduplicated.source_tag like 'fsds:%'
             then 'not_applicable'
-        when contradicted.accession is not null then 'contradicted'
+        when declared_part.accession is not null
+            and not declared_part.part_equals_total
+            then 'contradicted'
+        when declared_part.accession is not null then 'equivalent'
         when examined.accession is not null then 'confirmed'
         else 'unexamined'
     end as evidence
@@ -221,8 +233,10 @@ left join as_filed
     and as_filed.concept = deduplicated.concept
     and as_filed.period_kind = deduplicated.period_kind
     and as_filed.period_end = deduplicated.period_end
-left join contradicted
-    on contradicted.accession = deduplicated.accession
-    and contradicted.concept = deduplicated.concept
-    and contradicted.qualified_tag = deduplicated.source_tag
+left join declared_part
+    on declared_part.accession = deduplicated.accession
+    and declared_part.concept = deduplicated.concept
+    and declared_part.qualified_tag = deduplicated.source_tag
+    and declared_part.period_start is not distinct from deduplicated.period_start
+    and declared_part.period_end = deduplicated.period_end
 left join examined on examined.accession = deduplicated.accession

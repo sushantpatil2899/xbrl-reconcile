@@ -110,6 +110,11 @@ function cell(value, key) {
   if (value === "contradicted" || value === "check" || value === "missing") {
     return `<span class="tag warn">${value}</span>`;
   }
+  // The filer called it a part and its own figures made it the total anyway, so this
+  // reads as settled rather than as a caution.
+  if (value === "equivalent" || value === "confirmed") {
+    return `<span class="tag high">${value}</span>`;
+  }
   return String(value);
 }
 
@@ -216,11 +221,11 @@ async function showQuality() {
     "quality-contradicted",
     await query(
       `select ticker, fiscal_year as "fiscal year", period_kind as period, concept,
-              value / 1e6 as "value ($m)", confidence,
+              value / 1e6 as "value ($m)", evidence,
               source_tag as "tag it came from"
        from 'mart_financials.parquet'
-       where evidence = 'contradicted'
-       order by ticker, fiscal_year, value limit 25`,
+       where evidence in ('contradicted', 'equivalent')
+       order by evidence, ticker, fiscal_year limit 25`,
     ),
   );
 }

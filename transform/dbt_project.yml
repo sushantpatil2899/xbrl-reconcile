@@ -28,6 +28,16 @@ vars:
   # A 52/53 week year moves its end by a few days each year.
   year_end_tolerance_days: 15
 
+  # How far a declared part may sit from the total it is declared a part of and still
+  # count as the same figure. A fraction, like the tolerances above, but four orders
+  # of magnitude tighter, and for a different reason: those absorb genuine
+  # disagreement between filings, while this one only absorbs float error in a sum of
+  # whole dollars. At 0.001 it swallowed CrowdStrike's 500,000 noncontrolling
+  # interest, which is 0.07 percent of its equity and a real line on the statement,
+  # not noise. The question here is whether a part equals its total, so the answer has
+  # to mean equal.
+  separation_tolerance: 0.000001
+
   # How far net income may sit from diluted EPS times diluted shares before it is a
   # scale error rather than an accounting difference, expressed as a multiple of the
   # EPS rounding allowance. Deliberately loose: the identity legitimately fails for

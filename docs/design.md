@@ -1378,6 +1378,12 @@ noncontrolling interest for the arithmetic to separate. A structural contradicti
 with no numerical consequence, so `contradicted` is deliberately **not** folded into
 the `trust` label; it is counted beside it.
 
+That paragraph was written as an exception and it was the rule. Every contradiction
+the structural test ever produced was a part that equalled its own total, which makes
+the column a false positive by construction. See 13.12: the test now measures the
+difference rather than reading the shape of the arc, and `equivalent` is the label for
+a declared part that is its own whole.
+
 ### 13.8 What the presentation linkbase found that no arithmetic could
 
 The largest correction in the project came from one label.
@@ -1523,11 +1529,99 @@ the Autodesk bug, so it is a phase rather than a config edit.
   that test working.
 - **A measurement on the wrong grain over-flags by five times.** Company level
   evidence against filing level evidence: 115 against 24.
+- **Getting the grain right does not make the question right.** The per filing join was
+  correct and the thing it asked was still structural, so it was wrong every time it
+  fired. Fixing a join is not the same as checking a premise. See 13.12.
+- **A column that is wrong every time it fires looks like a working column**, because
+  the count is small, plausible, and never zero.
 - **A passing test after a fix proves nothing** until it is run against the data that
   contained the error.
 - **Backblaze's free tier allows 1 GB of downloads a day**, and five transform runs in
   an afternoon exceeded it, because every run re-reads the whole raw layer. Only
   `stg_sec_facts` is incremental. See section 14.
+
+### 13.12 A declared part is not always a smaller number
+
+The contradiction test in 13.7 was structural, and the structure lies. Its premise,
+written in `int_calculation_arcs`, was that a tag the filer declares to be an input to
+another tag we map to the same concept "cannot itself be that total". **That is false
+whenever the other inputs come to nothing, and measuring found it false every single
+time: all 27 published contradictions were a part that equalled its own total.** A
+column that is wrong every time it fires carries no information.
+
+Two shapes hide behind one arc, and only the second needs numbers.
+
+**A part that is the total's only input.** Workday declares `NetIncomeLoss = ProfitLoss`
+and nothing else in five of its annual reports. The two tags are the same number by
+construction. The arc list alone says so; no values are needed.
+
+**A part with siblings, where only the figures can say.** Workday's earlier filings
+declare net income as profit or loss less the accretion on redeemable preferred stock.
+The same arc, one year apart:
+
+| fiscal year | accretion | `ProfitLoss` | `NetIncomeLoss` | the same number? |
+|---|---|---|---|---|
+| 2013 | 568,000 | -119,190,000 | -119,758,000 | **no, by exactly the accretion** |
+| 2014 | **0.0** | -172,509,000 | -172,509,000 | yes |
+
+A structural test cannot tell those apart. Worth noting that the 2013 separation never
+reaches a published value anyway: tag priority already picks `NetIncomeLoss` where the
+company reports it, and `ProfitLoss` only wins in the quarters where it is the only
+one reported, which are the quarters where the accretion is zero. The old test was
+flagging precisely the cases the resolution rules had already got right.
+
+**What was built.** `int_arc_separation` measures, per filing, per declared part and
+per period, how far the part sits from the total: the weighted sum of the siblings
+under the same total in the same network. The grain is one row per filing, concept,
+part and period, and roles aggregate out conservatively, so a part counts as equal
+only where every network that declares it a part also makes it equal.
+
+A sibling with no figure for the period contributes nothing. That is the same reading
+`int_facts_derived` takes of an absent optional term, and the balance sheet confirms it
+for the case that prompted this: CrowdStrike declares total equity as its parent only
+equity plus a noncontrolling interest it never reports, and in all three quarters
+assets equal liabilities plus temporary equity plus the parent only figure **to the
+dollar**. The interest is absent because it is nothing. `siblings_unvalued` counts
+those so the assumption stays visible, and `separation_basis` names which of
+`sole_input`, `siblings_measured`, `siblings_absent` or `custom_sibling` produced the
+answer. A custom sibling can never be read, because companyfacts carries no custom
+tags at any period, so those are never called equal.
+
+**`contradicted` now means a measured difference**, and `equivalent` is the new label
+for a declared part that is its own whole. In `mart_confidence_report` the equivalent
+lines are counted in `confirmed_lines`, because nothing about them is in doubt and a
+separate column would leave them counted nowhere.
+
+**The tolerance had to be four orders of magnitude tighter than the others.** At the
+0.001 the project uses elsewhere, the measurement called two CrowdStrike filings equal
+while they carried a real 500,000 noncontrolling interest, which is 0.07 percent of its
+equity and a line on the statement rather than noise. Those tolerances absorb genuine
+disagreement between filings; this one only has to absorb float error in a sum of whole
+dollars, so it is 0.000001. After the change no separation above zero is called equal.
+
+**Measured against the annual only warehouse**, where this reproduces:
+
+| | |
+|---|---|
+| Published values labelled `contradicted` | 24 to **0** |
+| Published values labelled `equivalent` | **24**, all Workday net income |
+| Arc and period rows with a real separation | **78**, the largest 53,705,000 |
+| Nonzero separations called equal | **0** |
+| Tags still earning `component_of_same_concept` | **5** |
+
+The last two lines are the ones that matter. The verdict is not hollowed out: 78 rows
+and 5 tags do carry a genuine separation, so the test still has teeth, and none of
+those 78 reaches a published value because resolution already handles them. The three
+CrowdStrike equity values from the quarterly linkbases are not in this warehouse and
+the next production run settles them; the balance sheet arithmetic above says they
+should come back `equivalent`.
+
+**The independent recomputation earned its keep.** `evidence_matches_the_arcs` exists
+to recompute the label with correlated subqueries rather than joins, so a broken join
+shows up as a disagreement instead of a plausible looking column. When the semantics
+changed it reported 24 disagreements, all of them values that had correctly stopped
+being contradictions. A recomputation that needs updating when the meaning changes is
+working. One that does not is watching nothing.
 
 ## 14. Running cost as built
 
@@ -2060,16 +2154,20 @@ Left open by Phase 6, in rough order of value:
   so more arcs change the counts inside a row rather than adding rows. Row count was
   the wrong instrument.
 
-  **The backfill also found a mis-mapping that annual evidence structurally could
-  not.** The three new `contradicted` values are CrowdStrike's total equity in the
-  quarters ending April, July and October 2019, where `us-gaap:StockholdersEquity` is
-  a component beside `us-gaap:TemporaryEquityCarryingAmountAttributableToParent`
-  rather than the total, and the April figure is negative 485.2 million, which is the
-  signature of pre-IPO redeemable preferred sitting outside permanent equity. By the
-  fiscal 2020 annual report the preferred had converted and the annual linkbase shows
-  the tag as the total, so an annual only fetch could never have seen it. Confidence
-  was `high` and the statement was coherent, so neither label caught it. Only the per
-  filing arc did, which is the argument for 13.7's join grain restated as a result.
+  **The three new `contradicted` values were not a mis-mapping, and claiming they were
+  is corrected here.** They are CrowdStrike's total equity in the quarters ending
+  April, July and October 2019, where the quarterly arcs declare
+  `us-gaap:StockholdersEquity` a part of the including-noncontrolling-interest tag
+  rather than the total. The April figure is negative 485.2 million, which is the
+  signature of pre-IPO redeemable preferred sitting outside permanent equity, and it
+  is correct: assets equal liabilities plus temporary equity plus that figure to the
+  dollar in all three quarters. CrowdStrike reports no noncontrolling interest in
+  those periods, so the part is the total.
+
+  What the backfill actually exposed was a defect in the test rather than in the data.
+  Being declared a part is not the same as being a smaller number, and every
+  contradiction the structural test ever produced was a part that equalled its own
+  total. See 13.12, where that is measured instead.
 - **A per company scale override: built, and it is per filing.** The note was wrong
   about the mechanism as well as the count. Measuring found seven filings across
   three companies, not six share counts: HubSpot, Box and Datadog each filed a period

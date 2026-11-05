@@ -113,9 +113,11 @@ class FinancialRow(Period):
     evidence: str | None = Field(
         default=None,
         description=(
-            "What the filing's own calculation linkbase says about that tag. `contradicted`"
-            " is returned rather than withheld: it is a reason to look, not necessarily a"
-            " wrong figure."
+            "What the filing's own calculation linkbase says about that tag. Where the"
+            " filer calls the tag a part of something we also call this concept's total,"
+            " the parts are added up: `equivalent` means the rest come to nothing, so the"
+            " part is the total. `contradicted` means they really differ, and is returned"
+            " rather than withheld, because it is a reason to look."
         ),
     )
     basis: str | None = Field(description="Which accounting rulebook the filing used.")

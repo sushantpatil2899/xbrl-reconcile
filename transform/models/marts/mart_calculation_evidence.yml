@@ -5,7 +5,8 @@ models:
     description: >
       Whether the filings' own declared arithmetic supports each tag our config
       considered for a concept. A contradiction means the filer treats the tag as an
-      input to something we already call that concept's total.
+      input to something we already call that concept's total, and its own figures
+      make the part smaller than that total somewhere.
     tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -41,9 +42,28 @@ models:
       - name: declared_components
         description: How many components the filer declares under it, which a real total has.
         tests: [not_null]
+      - name: periods_differing
+        description: >
+          Filing periods where the tag is declared a part and its figure really is
+          smaller than the total's. These are the contradictions.
+        tests: [not_null]
+      - name: periods_equal
+        description: >
+          Filing periods where the tag is declared a part and equals the total anyway,
+          because it is the only input or because the rest come to nothing.
+        tests: [not_null]
+      - name: largest_separation
+        description: >
+          The biggest amount by which the part sat away from the total, across those
+          periods. Null where no arc declares this tag a part.
+      - name: separation_basis
+        description: >
+          How those separations were established: sole_input, siblings_measured,
+          siblings_absent or custom_sibling.
       - name: calculation_verdict
         description: >
-          component_of_same_concept  the filer treats it as a part of a total we map
+          component_of_same_concept  declared a part, and measurably smaller somewhere
+          component_equal_to_total   declared a part, and equal to that total throughout
           confirmed_total            nothing in the arcs contradicts the mapping
           no_arcs                    this company has no calculation linkbase at all
         tests:

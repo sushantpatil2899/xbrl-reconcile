@@ -1,0 +1,68 @@
+version: 2
+
+models:
+  - name: int_arc_separation
+    description: >
+      For every tag a filing declares to be a part of a total we map to the same
+      concept, how far the part actually is from that total in that filing and for
+      that period. Turns the structural contradiction test into a measured one.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              [accession, concept, qualified_tag, period_start, period_end]
+    columns:
+      - name: accession
+        description: The filing whose arcs declared the relationship.
+        tests: [not_null]
+      - name: concept
+        description: Our canonical concept both ends of the arc map to.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_tag_mappings')
+                field: concept
+      - name: qualified_tag
+        description: The declared part, as taxonomy:Tag.
+        tests: [not_null]
+      - name: period_end
+        tests: [not_null]
+      - name: part_value
+        description: What the filing reported for the part in this period.
+        tests: [not_null]
+      - name: siblings_declared
+        description: >
+          How many other inputs the filing declares under the same total. Zero means
+          the part is the total's only input, so they are the same number by
+          construction.
+        tests: [not_null]
+      - name: siblings_unvalued
+        description: >
+          How many of those siblings the filing reports no figure for in this period,
+          and are therefore read as nothing. Kept so the assumption is visible.
+        tests: [not_null]
+      - name: siblings_custom
+        description: >
+          How many siblings are the filer's own tags. companyfacts carries none of
+          these, so their value cannot be read at any period and the separation
+          cannot be settled.
+        tests: [not_null]
+      - name: separation
+        description: >
+          The absolute amount by which the siblings move the total away from this
+          part, for this period. Zero means the part is the total.
+        tests: [not_null]
+      - name: part_equals_total
+        description: >
+          Whether the part and the total are the same number here. True for a sole
+          input, and where the separation measures as nothing.
+        tests: [not_null]
+      - name: separation_basis
+        description: How the separation was established, so a reader can weigh it.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  [sole_input, siblings_measured, siblings_absent, custom_sibling]

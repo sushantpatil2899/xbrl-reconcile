@@ -104,8 +104,12 @@ models:
           number, judged against the filing that reported it.
 
           confirmed       that filing's arcs do not contradict the mapping
+          equivalent      that filing calls the tag a part of something we also call
+                          this concept's total, and its own figures make the part
+                          equal that total
           contradicted    that filing calls the tag a part of something we also call
-                          this concept's total. Not necessarily a wrong figure
+                          this concept's total, and its own figures make the part
+                          smaller
           unexamined      that filing carries no calculation linkbase, which is true
                           of most 10-Qs because theirs are not fetched
           not_applicable  the value has no single source tag: derived, a component

@@ -58,14 +58,20 @@ models:
       - name: confirmed_lines
         description: >
           Lines whose tag the reporting filing's own arithmetic does not contradict.
+          Includes the `equivalent` ones, where the filer does call the tag a part of a
+          total we map and the remaining parts come to nothing, so the part is the
+          total. Nothing is in doubt in either case, and keeping them apart here would
+          leave them counted nowhere.
         tests: [not_null]
       - name: contradicted_lines
         description: >
           Lines whose reporting filing calls the tag a part of something we also call
-          that concept's total. It does not follow that the figure is wrong: where a
-          company has no noncontrolling interest, the two tags carry the same value.
-          Deliberately not folded into `trust`, because it would flag 24 values that
-          are identical to their alternative.
+          that concept's total and whose own figures make the part smaller. Being
+          declared a part is not enough on its own: where a company has no
+          noncontrolling interest the two tags carry the same value, which is why this
+          counts a measured difference rather than the shape of the arc. Deliberately
+          not folded into `trust`, because a mapping worth reading is not a wrong
+          number.
         tests: [not_null]
       - name: identity_gap
         description: >

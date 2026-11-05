@@ -6,11 +6,14 @@
   included deliberately: the 123 values where two tags disagreed are exactly the ones
   evidence should adjudicate, and the loser is half of that question.
 
-  The verdict rests on one relationship. Where a tag is an input to another tag our
-  config maps to the same concept, the filer is saying it is a part rather than the
-  whole, so treating it as that concept's total contradicts the filing. Where no
-  such arc exists, nothing contradicts the mapping, which is weaker than proof and is
-  labelled as such.
+  The verdict rests on one relationship and then on the numbers behind it. Where a
+  tag is an input to another tag our config maps to the same concept, the filer is
+  saying it is a part rather than the whole. That alone is not a contradiction: a
+  part that is the total's only input, or whose siblings come to nothing, is the same
+  number as the total. So the arc opens the question and `int_arc_separation` answers
+  it, per filing and per period, and only a part that measurably differs somewhere
+  earns `component_of_same_concept`. Where no such arc exists, nothing contradicts
+  the mapping, which is weaker than proof and is labelled as such.
 
   A tag absent from every linkbase is not disproved. Six annual reports carry no
   calculation linkbase at all, all of them recent filings from HubSpot and Box, so
@@ -80,6 +83,26 @@ as_total as (
 
 ),
 
+{#- Whether the declared part is actually a different number from the total, per
+    filing and period, aggregated to this mart's grain. A part that equals its own
+    total everywhere it is declared one is not evidence against the mapping. -#}
+separation as (
+
+    select
+        arcs.cik,
+        sep.concept,
+        sep.qualified_tag,
+        count(*) filter (where not sep.part_equals_total) as periods_differing,
+        count(*) filter (where sep.part_equals_total) as periods_equal,
+        max(sep.separation) as largest_separation,
+        string_agg(distinct sep.separation_basis, ' | ') as separation_basis
+    from {{ ref('int_arc_separation') }} as sep
+    join (select distinct accession, cik from arcs) as arcs
+        on arcs.accession = sep.accession
+    group by all
+
+),
+
 {#- Whether the company has any linkbase evidence at all. Six annual reports carry
     none, so a tag can be unexamined rather than unsupported. -#}
 coverage as (
@@ -104,8 +127,15 @@ select
     as_component.weight as weight_as_component,
     as_input.input_to,
     coalesce(as_total.declared_components, 0) as declared_components,
+    coalesce(separation.periods_differing, 0) as periods_differing,
+    coalesce(separation.periods_equal, 0) as periods_equal,
+    separation.largest_separation,
+    separation.separation_basis,
     case
-        when as_component.qualified_tag is not null then 'component_of_same_concept'
+        when as_component.qualified_tag is not null
+            and coalesce(separation.periods_differing, 0) > 0
+            then 'component_of_same_concept'
+        when as_component.qualified_tag is not null then 'component_equal_to_total'
         when coalesce(coverage.filings_with_arcs, 0) = 0 then 'no_arcs'
         else 'confirmed_total'
     end as calculation_verdict
@@ -120,4 +150,8 @@ left join as_input
 left join as_total
     on as_total.cik = candidates.cik
     and as_total.qualified_tag = candidates.qualified_tag
+left join separation
+    on separation.cik = candidates.cik
+    and separation.concept = candidates.concept
+    and separation.qualified_tag = candidates.qualified_tag
 left join coverage on coverage.cik = candidates.cik

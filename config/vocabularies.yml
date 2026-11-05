@@ -117,10 +117,16 @@ vocabularies:
     values:
       - value: confirmed
         description: That filing's arcs do not contradict the mapping.
+      - value: equivalent
+        description: >
+          That filing calls the tag a part of something we also call this concept's
+          total, and its own figures make the part equal that total, so the mapping
+          stands.
       - value: contradicted
         description: >
           That filing calls the tag a part of something we also call this concept's
-          total. Not necessarily a wrong figure, but a mapping worth reading twice.
+          total, and its own figures make the part smaller. A mapping worth reading
+          twice.
       - value: unexamined
         description: >
           That filing carries no calculation linkbase, which is true of most 10-Qs
@@ -186,8 +192,14 @@ vocabularies:
     values:
       - value: confirmed_total
         description: Nothing in the arcs contradicts the mapping.
+      - value: component_equal_to_total
+        description: >
+          The filer treats it as a part of a total we already map, and its own
+          figures make the part equal that total everywhere it says so.
       - value: component_of_same_concept
-        description: The filer treats it as a part of a total we already map.
+        description: >
+          The filer treats it as a part of a total we already map, and somewhere its
+          own figures make the part smaller.
       - value: no_arcs
         description: This company has no calculation linkbase at all.
 
