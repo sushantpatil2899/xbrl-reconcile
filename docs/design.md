@@ -1,7 +1,8 @@
 # xbrl-reconcile: Design
 
-Status: Phases 0 to 4 built. Later phases list open decisions only.
-Last updated: 2026-09-26
+Status: Phases 0 to 7 built. Sections 16 and 17 record which decisions are closed and
+which are still open.
+Last updated: 2026-11-05
 
 ## 1. Goal
 
@@ -1803,7 +1804,10 @@ revenue 1,210.127m under IFRS, confirmed by the filing's own arcs.
 
 No host is chosen, so nothing is deployed and no workflow builds or publishes the
 image. The static DuckDB-WASM page needs the repository to be public and is still
-outstanding. `format=csv` is deferred. `raw/config/` still has no lifecycle rule.
+outstanding: `pages.yml` exists and is guarded by a `PAGES_ENABLED` repository
+variable, so enabling it is a variable flip rather than a code change, and it reports
+as skipped after every transform until then. `format=csv` is deferred. `raw/config/`
+deliberately has no lifecycle rule, see 16.2.
 
 ### 15.12 The static query page
 
@@ -1965,10 +1969,16 @@ makes it cheaper to build then.
 
 ## 17. Open decisions for later phases
 
-Phase 3 (mapping)
-- Initial canonical concept list (about 15).
-- Tag mapping file format (YAML with generated dbt seed, or CSV seed directly).
-- Priority when a company reports several candidate tags for the same period.
+Reconciled on 2026-11-05 against what actually shipped. Six entries below were
+recorded as open and had already been built, four of them in the same two commits
+that this section was never updated for, and two of those turned out to describe the
+problem wrongly as well. Each is marked with what was built and where the note was
+wrong, rather than deleted, because the correction is the useful part.
+
+Phase 3 (mapping): built, see section 10. All three were settled there: 16 canonical
+concepts in `mart_concepts`, YAML in `config/tag_mappings.yml` read directly rather
+than through a generated seed, and candidate priority by explicit `priority` then
+recency of filing.
 
 Phase 4 (Data Sets): built, see section 11.
 
@@ -1979,50 +1989,83 @@ labels; Q4 by subtraction on additive concepts only.
 Left open by Phase 5, in rough order of value:
 
 - **Deriving the other quarters: done**, see 16.1.
-- **Whether incoherence should force a `check` trust label.** It does not today:
-  29 statements are labelled `reported` while carrying a line newer than the filing
-  they were read from. The numbers are not in doubt there, only their provenance,
-  but the opposite choice is defensible and is one clause.
+- **Whether incoherence should force a `check` trust label: built.** It does. A
+  statement carrying a line newer than the filing it was read from is not wrong, but
+  calling it `reported` claimed more than we know. Measuring found more than the note
+  recorded: 74 statements move, 23 from `reported`, 39 from `mapped` and 12 from
+  `computed`, and none now claims `reported` while incoherent.
 - **A contiguity rule for duplicate period starts.** Adobe's 23 rows are resolved
   by majority of filings, which is a heuristic. The accounting correct test is
   whether a period starts the day after the previous one ends, which needs the
   period chain.
-- **One definition of each accounting identity.** The balance sheet identity is now
-  written in `consistency_balance_sheet` and in `mart_confidence_report`, on
-  different inputs by design, and a third partial version lives in
-  `int_facts_derived`. A macro could hold one definition.
+- **One definition of each accounting identity: built.** All three readings now come
+  from `transform/macros/accounting_identities.sql`. Writing it once found a latent
+  bug: the derivation computed total liabilities as assets minus equity and ignored
+  temporary equity, so a company reporting both would have had its liabilities
+  overstated by exactly its temporary equity. No company in this warehouse reports
+  both, which is how it survived. The derivation gained `optional_terms`, summed when
+  present and never gating, because requiring temporary equity would stop total
+  liabilities being derived for the companies that have none.
 - **Presentation lines that are not concepts**, such as a gross margin percentage
   or a grouping header. These would need a separate `config/statements.yml`; the
   concept order in `config/tag_mappings.yml` was enough without one.
 
-Phase 6 (linkbase): built, see section 13. Every annual report was parsed rather
-than the latest per company, because the mappings needing evidence are historical.
+Phase 6 (linkbase): built, see section 13. Every report of a counted form is parsed
+rather than the latest per company, because the mappings needing evidence are
+historical. Section 13 measures the annual only state it was first built in; the
+quarterly backfill came after and is recorded below.
 
 Left open by Phase 6, in rough order of value:
 
-- **Per concept `label_hints` in config.** Declaring the labels a concept expects
-  would let the engine question mappings it already has. This was deferred during
-  Phase 6 on the grounds that reading an eight row candidate list costs less than
-  maintaining a heuristic, which was true for candidate detection and wrong for the
-  larger case: Workday's operating expenses were overstated in 92 values because it
-  labels `us-gaap:OperatingExpenses` "Total costs and expenses" while every other
-  filer labels it "Total operating expenses". A declared expectation would have
-  caught that automatically rather than by investigation. See 13.8.
-- **Fetching 10-Q calculation linkbases.** Two thirds of published values come from
-  10-Qs, so only 23 percent of values can currently be judged. This would roughly
-  triple coverage at roughly triple the requests.
-- **A per company scale override.** Six diluted share counts are tagged in thousands
-  by filers who tag the annual in units. The scale check reports them; nothing can
-  correct them, because config has no notion of a unit multiplier.
+- **Per concept `label_hints` in config: built.** Three concepts declare the labels
+  they expect in `config/tag_mappings.yml`, read by `stg_label_hints` and checked by
+  `labels_match_the_concept`. The deferral reasoning was that reading an eight row
+  candidate list costs less than maintaining a heuristic, which was true for
+  candidate detection and wrong for the larger case: Workday's operating expenses
+  were overstated in 92 values because it labels `us-gaap:OperatingExpenses` "Total
+  costs and expenses" while every other filer labels it "Total operating expenses".
+  A declared expectation catches that automatically rather than by investigation.
+  See 13.8. The test fires on "no label matches", not on "some label rejected",
+  because a concept legitimately has several acceptable labels.
+- **Fetching 10-Q calculation linkbases: built.** The form narrowing is gone from
+  `run_linkbase.py` entirely, so `report_types` in `config/companies.yml` decides,
+  and every form it counts as a report has its linkbase fetched. The reasoning for
+  stopping at annual reports was that a 10-Q's linkbase describes the same tags as
+  its year's 10-K, which is true of the tags and false of the coverage: a value is
+  judgeable only when the filing that reported it carries arcs, and two thirds of
+  published values come from 10-Qs. The backfill ran on 2026-10-08 and landed 777
+  filings, 16 of which carry no calculation linkbase, with none left for a later
+  run, in 15 minutes at the rate the SEC allows.
+
+  Expected effect is the judgeable share from 23 percent to 89 percent, and it has
+  not been re-measured since the backfill. The evidence marts did not change row
+  count, which is correct and not evidence of nothing happening: their grain is
+  company, concept and candidate tag, so more arcs change the counts inside a row
+  rather than adding rows. The measurement that would confirm it is the `evidence`
+  distribution on `mart_financials`, which lives in the published warehouse.
+- **A per company scale override: built, and it is per filing.** The note was wrong
+  about the mechanism as well as the count. Measuring found seven filings across
+  three companies, not six share counts: HubSpot, Box and Datadog each filed a period
+  correctly and re-filed the same period in thousands years later, and the recency
+  rule then picked the rescaled one. So the error belongs to a filing, not to a
+  company and not to a period, and `scale_overrides` is scoped by accession. HubSpot
+  needs that scoping because it tagged three 10-Qs in thousands with a 10-K in units
+  filed between two of them, and Datadog needs a period bound as well, having tagged
+  current periods in thousands while leaving the prior year comparatives in the same
+  document in units. Applied in `int_facts_mapped`, before any comparison across
+  filings, so recency picks a figure already in the right scale and each filing keeps
+  its own `originally_reported_value`. An earlier attempt applied it after resolution
+  and scaled both the latest value and the first reported one when only one was
+  wrong. Measured: no share count is now under a million, where six were, and the
+  scale test goes from six warnings to none while still running.
 - **Custom tags beyond a declared sum.** Workday's six gaps are closed: a third
   override mode, `sum`, adds named parts from the Data Sets where one part is a
   custom tag that companyfacts drops, scoped to one company because a custom tag name
-  is not unique. What is still open is the general case. The sum has to be declared
-  per company and per concept, so a filer who reports a concept only as custom parts
-  is found by inspection rather than by the pipeline. `mart_custom_tags` lists 1,092
-  unmapped custom tags; nothing proposes which of them are parts of a total we are
-  missing. The calculation linkbase could: a custom tag whose parent is a concept we
-  map is a declared part of it.
+  is not unique. The general case was then reviewed and closed for want of a problem,
+  see 16.3: the linkbase mechanism works and finds 279 such custom tags, but joined
+  to the gaps it would close it returns zero rows, because coverage is at 3 missing
+  cells out of 5,056. It becomes worth building when coverage opens up again, which
+  adding companies or a sector would do.
 - **Recovering the schema href authoritatively for older runs.** Already done by the
   format bump, and recorded here only because the mechanism generalises: any future
   change to the parsed shape is a version bump and a re-parse, with no refetch.
