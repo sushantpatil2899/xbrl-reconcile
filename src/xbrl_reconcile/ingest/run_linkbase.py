@@ -65,8 +65,13 @@ NOT_ON_EDGAR = "404"
 # the coverage. Three quarters of published values come from 10-Qs, and a value is
 # only judgeable when the filing that reported it carries arcs, so restricting to
 # annual reports left 23 percent of values judgeable and 16,817 unexamined. Adding
-# the quarterly reports is 793 more filings against 256 already fetched, about two
-# minutes at the rate the SEC allows, and takes the judgeable share to 89 percent.
+# the quarterly reports was 793 more filings against 256 already fetched, and 777 of
+# them landed in 15 minutes at the rate the SEC allows.
+#
+# Measured after the fact: the judgeable share is 82.1 percent, not the 89 percent
+# first estimated here. The estimate assumed every fetched filing carries a
+# calculation linkbase, and 28 of them carry none, which accounts for all 860 values
+# still unexamined. Fetching more filings cannot improve on this.
 
 
 @dataclass

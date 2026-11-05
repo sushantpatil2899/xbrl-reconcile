@@ -2037,12 +2037,39 @@ Left open by Phase 6, in rough order of value:
   filings, 16 of which carry no calculation linkbase, with none left for a later
   run, in 15 minutes at the rate the SEC allows.
 
-  Expected effect is the judgeable share from 23 percent to 89 percent, and it has
-  not been re-measured since the backfill. The evidence marts did not change row
-  count, which is correct and not evidence of nothing happening: their grain is
-  company, concept and candidate tag, so more arcs change the counts inside a row
-  rather than adding rows. The measurement that would confirm it is the `evidence`
-  distribution on `mart_financials`, which lives in the published warehouse.
+  Measured on 2026-11-05 against the published marts, not estimated:
+
+  | `evidence` | Before | After |
+  |---|---|---|
+  | `unexamined`, the filing carries no linkbase | 16,817 | **860** |
+  | **`confirmed`** | 5,818 | **21,910** |
+  | `not_applicable`, no single source tag | 3,898 | 3,916 |
+  | `contradicted` | 24 | 27 |
+
+  **The judgeable share goes from 23 percent to 82.1 percent**, or 96.2 percent of
+  the values that have a single source tag for arithmetic to apply to. The estimate
+  written into `run_linkbase.py` was 89 percent and was 7 points optimistic, because
+  it assumed every fetched filing carries a calculation linkbase. The 860 values that
+  remain unexamined come from **28 filings that have no calculation linkbase at all**,
+  and no amount of fetching changes that: 311 values are HubSpot's and 297 are Box's,
+  both of which stopped shipping one in their recent filings, and the rest are one
+  filing each from Figma, ServiceNow, Twilio, Datadog and Klaviyo.
+
+  The evidence marts kept the same row count across the backfill, which is correct and
+  not evidence of nothing happening: their grain is company, concept and candidate tag,
+  so more arcs change the counts inside a row rather than adding rows. Row count was
+  the wrong instrument.
+
+  **The backfill also found a mis-mapping that annual evidence structurally could
+  not.** The three new `contradicted` values are CrowdStrike's total equity in the
+  quarters ending April, July and October 2019, where `us-gaap:StockholdersEquity` is
+  a component beside `us-gaap:TemporaryEquityCarryingAmountAttributableToParent`
+  rather than the total, and the April figure is negative 485.2 million, which is the
+  signature of pre-IPO redeemable preferred sitting outside permanent equity. By the
+  fiscal 2020 annual report the preferred had converted and the annual linkbase shows
+  the tag as the total, so an annual only fetch could never have seen it. Confidence
+  was `high` and the statement was coherent, so neither label caught it. Only the per
+  filing arc did, which is the argument for 13.7's join grain restated as a result.
 - **A per company scale override: built, and it is per filing.** The note was wrong
   about the mechanism as well as the count. Measuring found seven filings across
   three companies, not six share counts: HubSpot, Box and Datadog each filed a period
