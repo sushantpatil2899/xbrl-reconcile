@@ -37,7 +37,7 @@ variable "ghcr_read_token" {
 }
 
 variable "api_image_tag" {
-  description = "Tag the app is first created with. Rollouts after that belong to the workflow, so changing this deploys nothing."
+  description = "Image tag Terraform sets. Once the deploy workflow owns rollouts and the image is added to ignore_changes, changing this will stop deploying anything."
   type        = string
   default     = "latest"
 }
