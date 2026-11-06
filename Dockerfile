@@ -11,6 +11,12 @@
 # build secrets, which are mounted for one RUN and leave nothing in a layer, rather
 # than as build arguments, which are recorded in the image history for anyone who
 # pulls it.
+#
+# The bucket name and its endpoint travel as build arguments instead, and that is not
+# an inconsistency. They are not secrets: both are repository variables rather than
+# repository secrets, and neither grants access to anything on its own. Being recorded
+# in the image history costs nothing, and the storage factory requires both outright,
+# with no default to fall back on.
 
 FROM python:3.13-slim AS marts
 
@@ -20,6 +26,17 @@ COPY pyproject.toml uv.lock ./
 COPY src ./src
 RUN uv sync --locked --no-dev
 
+ARG B2_BUCKET
+ARG B2_ENDPOINT
+
+# Declared immediately before the fetch so its value is part of that layer's cache key
+# and nothing above it. Without this the fetch below would be served from cache on
+# every build after the first, because none of its other inputs change from one day to
+# the next, and the image would quietly ship whichever marts the first build happened
+# to see. Passing the run id makes the data layer rebuild every time while the
+# dependency install above stays cached, which is the expensive half.
+ARG MARTS_REVISION
+
 # The only step that touches the bucket. Secrets are mounted here and nowhere else.
 # xbrl-fetch-marts verifies every file's size and row count against the published
 # index, so a truncated download fails the build rather than shipping short answers.
@@ -27,6 +44,8 @@ RUN --mount=type=secret,id=b2_key_id \
     --mount=type=secret,id=b2_key \
     B2_INGEST_KEY_ID="$(cat /run/secrets/b2_key_id)" \
     B2_INGEST_KEY="$(cat /run/secrets/b2_key)" \
+    B2_BUCKET="$B2_BUCKET" \
+    B2_ENDPOINT="$B2_ENDPOINT" \
     STORAGE_BACKEND=b2 \
     MARTS_PATH=/marts \
     uv run xbrl-fetch-marts

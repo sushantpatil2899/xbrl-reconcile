@@ -1,0 +1,108 @@
+name: image
+
+# Builds the API image with the current marts inside it and pushes it to the GitHub
+# container registry. Chained after transform the same way pages is, and for the same
+# reason: the marts are baked into the image, so a new publish means a new image.
+#
+# The registry is GHCR rather than Azure Container Registry, which has no free tier and
+# bills a flat rate per day whether anything is pulled or not. Building here is not a
+# compromise either, it is the requirement: the Dockerfile mounts the bucket
+# credentials as a BuildKit secret so they touch exactly one layer and are recorded in
+# none, and Actions supports that where a platform builder generally does not.
+#
+# This workflow only publishes the image. Rolling it out to Azure is a separate job, so
+# that a daily data refresh can never alter infrastructure Terraform owns.
+
+on:
+  workflow_run:
+    workflows: [transform]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: image
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    # A failed transform may not have published marts at all, and baking whatever is
+    # still in the bucket would ship yesterday's figures under today's image. A manual
+    # run is always allowed, because that is how a fix gets tested.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      # GITHUB_TOKEN rather than a personal token. It is issued for this run, expires
+      # with it, and the packages: write permission above is the whole of its authority
+      # over the registry.
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+
+          # Container Apps runs amd64. Stated rather than inherited from the runner, so
+          # moving to an arm runner cannot silently produce an image Azure will not run.
+          platforms: linux/amd64
+
+          # Two tags with different jobs. The run id is the one deployments reference,
+          # because a fixed tag does not change and so cannot produce a new revision.
+          # latest is for a human reaching for the image by hand.
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ github.run_id }}
+            ghcr.io/${{ github.repository }}:latest
+
+          build-args: |
+            B2_BUCKET=${{ vars.B2_BUCKET }}
+            B2_ENDPOINT=${{ vars.B2_ENDPOINT }}
+            MARTS_REVISION=${{ github.run_id }}
+
+          secrets: |
+            b2_key_id=${{ secrets.B2_INGEST_KEY_ID }}
+            b2_key=${{ secrets.B2_INGEST_KEY }}
+
+          # Keeps the dependency install, which is the slow layer, between runs. The
+          # marts fetch deliberately sits below a cache key that changes every run, so
+          # this speeds the build without ever serving stale data.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Proof rather than trust. The build can succeed with an image that will not start,
+      # and an image that will not start is indistinguishable from a broken deploy later.
+      # So run it here, on the runner, and ask it a real question before anything is
+      # rolled out.
+      - name: Check the image actually serves
+        run: |
+          image="ghcr.io/${{ github.repository }}:${{ github.run_id }}"
+          docker run -d --name api -p 8000:8000 "$image"
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/healthz >/dev/null 2>&1; then
+              echo "answered after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://localhost:8000/healthz
+          echo
+          docker logs api | tail -20
+          docker rm -f api >/dev/null
+
+      - name: Report what was published
+        run: |
+          echo "image:  ghcr.io/${{ github.repository }}:${{ github.run_id }}"
+          echo "digest: ${{ steps.build.outputs.digest }}"
