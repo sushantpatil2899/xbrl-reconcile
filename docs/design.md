@@ -1534,6 +1534,9 @@ the Autodesk bug, so it is a phase rather than a config edit.
   fired. Fixing a join is not the same as checking a premise. See 13.12.
 - **A column that is wrong every time it fires looks like a working column**, because
   the count is small, plausible, and never zero.
+- **An absence of measurement reads as a result** unless the case expression asks for
+  one. Twice in the same question: the structural test, and then the tag level verdict
+  that replaced it, where zero measurements counted as zero differences. See 13.12.
 - **A passing test after a fix proves nothing** until it is run against the data that
   contained the error.
 - **Backblaze's free tier allows 1 GB of downloads a day**, and five transform runs in
@@ -1599,22 +1602,46 @@ equity and a line on the statement rather than noise. Those tolerances absorb ge
 disagreement between filings; this one only has to absorb float error in a sum of whole
 dollars, so it is 0.000001. After the change no separation above zero is called equal.
 
-**Measured against the annual only warehouse**, where this reproduces:
+**Measured in production**, against the marts published at 2026-11-05T23:49:16Z:
 
-| | |
-|---|---|
-| Published values labelled `contradicted` | 24 to **0** |
-| Published values labelled `equivalent` | **24**, all Workday net income |
-| Arc and period rows with a real separation | **78**, the largest 53,705,000 |
-| Nonzero separations called equal | **0** |
-| Tags still earning `component_of_same_concept` | **5** |
+| `evidence` | Before | After |
+|---|---|---|
+| `confirmed` | 21,910 | 21,910 |
+| `not_applicable` | 3,916 | 3,928 |
+| `unexamined` | 860 | 860 |
+| **`contradicted`** | **27** | **gone** |
+| **`equivalent`** | | **27** |
 
-The last two lines are the ones that matter. The verdict is not hollowed out: 78 rows
-and 5 tags do carry a genuine separation, so the test still has teeth, and none of
-those 78 reaches a published value because resolution already handles them. The three
-CrowdStrike equity values from the quarterly linkbases are not in this warehouse and
-the next production run settles them; the balance sheet arithmetic above says they
-should come back `equivalent`.
+All 27 moved, 24 Workday net income and 3 CrowdStrike total equity, and **no new
+contradiction appeared**, which was the open question: a per period measurement over
+the quarterly arcs could have turned up a real one, and it did not.
+
+The verdict is not hollowed out, which was the risk worth checking. Five tags still
+earn `component_of_same_concept` on genuine separations:
+
+| company | concept | part | largest separation | basis |
+|---|---|---|---|---|
+| CrowdStrike | total_equity | `us-gaap:StockholdersEquity` | 44,215,000 | measured and absent |
+| CrowdStrike | net_income | `us-gaap:ProfitLoss` | 18,192,000 | measured |
+| Salesforce | total_equity | `us-gaap:StockholdersEquity` | 14,929,000 | measured |
+| Snowflake | total_equity | `us-gaap:StockholdersEquity` | 12,494,000 | measured |
+| Workday | net_income | `us-gaap:ProfitLoss` | 568,000 | measured and absent |
+
+Workday's 568,000 is the fiscal 2013 accretion from the table above, now a published
+number rather than a thing found by hand. **None of those five reaches a published
+value**, because tag priority already picks the fuller tag wherever the filer reports
+it. The old test was flagging the cases resolution had got right and missing the
+measurement that would have said so.
+
+**One bug in the first version of this, found by reading the production marts.** The
+tag level verdict tested only `periods_differing = 0` before calling a part equal to
+its total, and Splunk's `us-gaap:Revenues` came back `component_equal_to_total` with
+both counts at zero: it is declared a part in a filing that reports no figure for it,
+so nothing was ever measurable. **An absence of measurement was reading as a result**,
+which is the same mistake as the structural test one level up. The verdict now requires
+having measured it equal somewhere and never measured it different, and
+`component_of_same_concept` is described as "not shown to equal that total" rather than
+as "smaller", because it now covers both.
 
 **The independent recomputation earned its keep.** `evidence_matches_the_arcs` exists
 to recompute the label with correlated subqueries rather than joins, so a broken join

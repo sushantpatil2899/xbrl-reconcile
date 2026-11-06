@@ -62,8 +62,10 @@ models:
           siblings_absent or custom_sibling.
       - name: calculation_verdict
         description: >
-          component_of_same_concept  declared a part, and measurably smaller somewhere
-          component_equal_to_total   declared a part, and equal to that total throughout
+          component_of_same_concept  declared a part, and not shown to equal that
+                                     total: smaller somewhere, or never measurable
+          component_equal_to_total   declared a part, and equal to that total wherever
+                                     the figures allowed the check
           confirmed_total            nothing in the arcs contradicts the mapping
           no_arcs                    this company has no calculation linkbase at all
         tests:

@@ -131,11 +131,17 @@ select
     coalesce(separation.periods_equal, 0) as periods_equal,
     separation.largest_separation,
     separation.separation_basis,
+    -- Equal only where it was measured equal and never measured different. Splunk
+    -- shows why the order matters: its `Revenues` is declared a part in a filing that
+    -- reports no figure for it, so nothing was ever measurable and both counts are
+    -- zero. Testing `periods_differing = 0` alone called that equal, which read an
+    -- absence of measurement as a result.
     case
         when as_component.qualified_tag is not null
-            and coalesce(separation.periods_differing, 0) > 0
-            then 'component_of_same_concept'
-        when as_component.qualified_tag is not null then 'component_equal_to_total'
+            and coalesce(separation.periods_equal, 0) > 0
+            and coalesce(separation.periods_differing, 0) = 0
+            then 'component_equal_to_total'
+        when as_component.qualified_tag is not null then 'component_of_same_concept'
         when coalesce(coverage.filings_with_arcs, 0) = 0 then 'no_arcs'
         else 'confirmed_total'
     end as calculation_verdict

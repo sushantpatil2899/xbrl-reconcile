@@ -194,12 +194,13 @@ vocabularies:
         description: Nothing in the arcs contradicts the mapping.
       - value: component_equal_to_total
         description: >
-          The filer treats it as a part of a total we already map, and its own
-          figures make the part equal that total everywhere it says so.
+          The filer treats it as a part of a total we already map, and its own figures
+          make the part equal that total everywhere they could be checked.
       - value: component_of_same_concept
         description: >
-          The filer treats it as a part of a total we already map, and somewhere its
-          own figures make the part smaller.
+          The filer treats it as a part of a total we already map, and the part has
+          not been shown to equal it: either the figures make it smaller somewhere, or
+          no filing reported the figures needed to check.
       - value: no_arcs
         description: This company has no calculation linkbase at all.
 
