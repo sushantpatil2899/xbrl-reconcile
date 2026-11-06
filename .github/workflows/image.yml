@@ -95,6 +95,10 @@ jobs:
           # refreshes on the daily path rather than only when someone runs this by
           # hand. The bucket credentials are a BuildKit secret mount, which is
           # recorded in no layer and so reaches no cache.
+          #
+          # A run that finds no buildcache tag logs "failed to configure registry cache
+          # importer: not found" and carries on. That is the empty cache case, not a
+          # failure, and it appears once after the tag is created or removed.
           cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
           cache-to: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache,mode=max
 
