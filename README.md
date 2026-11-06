@@ -2,402 +2,312 @@
 
 [![ci](https://github.com/sushantpatil2899/xbrl-reconcile/actions/workflows/ci.yml/badge.svg)](https://github.com/sushantpatil2899/xbrl-reconcile/actions/workflows/ci.yml)
 
-A data pipeline that ingests SEC XBRL filings for software companies and
-reconciles inconsistent accounting tags into comparable financial statements,
-with a confidence level on every mapped value.
+Comparable financial statements for 28 software companies, built from SEC XBRL
+filings, with a confidence level and a piece of evidence attached to every
+single number.
+
+**[Query it in your browser](https://sushantpatil2899.github.io/xbrl-reconcile/)**
+· **[API](https://ca-xbrl-reconcile-api.wonderfulwater-66905cf2.northcentralus.azurecontainerapps.io/docs)**
+· **[Architecture](https://sushantpatil2899.github.io/xbrl-reconcile/architecture.html)**
+
+> 16 canonical concepts. 58 different XBRL tags used to report them. Revenue
+> alone is filed under nine.
+
+<!-- Two minute walkthrough goes here, directly under the hero. -->
+
+---
 
 ## The problem
 
 Since 2009, US public companies must tag every number in their financial
-reports using XBRL, a machine readable vocabulary. In theory that makes company
-comparison trivial. In practice the same concept is tagged differently by
-different companies, and by the same company across years.
+statements in XBRL, a machine readable vocabulary. In theory that makes
+comparing companies trivial. In practice filers are allowed to extend the
+standard taxonomy whenever they feel it does not fit, and they are allowed to
+pick between standard tags that overlap. So the same concept is tagged
+differently by different companies, and by the same company across years.
 
-Measured across the 28 companies in this project:
+This is not a niche complaint. The regulator, the practitioner press and the
+accounting literature all say the same thing.
 
-- **2,047** distinct `us-gaap` concepts are in use. Only **42** are used by all
-  28 companies, while **774** are used by exactly one.
-- Revenue alone appears under at least five standard tags. Most companies use
-  `RevenueFromContractWithCustomerExcludingAssessedTax`; CrowdStrike uses the
-  **Including** variant. Intuit has used four different revenue tags over time.
-- Companies restate. Salesforce reported total assets at 2018-01-31 as
-  **$21,009,802,000** in its annual report, then **$21,984,000,000** three
-  months later after an accounting rule change. Both numbers are correct in
-  their moment.
-- **113,249** of **226,028** company facts are reported by more than one
-  filing, so any naive query returns duplicates.
-- **A third of the facts are invisible in SEC's JSON API.** Workday never tags a
-  total cost of revenue; it reports the figure split by product line, and that API
-  drops every dimensional fact. Recovering them needs SEC's quarterly Financial
-  Statement Data Sets, where 131,908 of 395,773 facts carry a dimension.
+> "the Commission has acknowledged that the use of custom tags could
+> potentially reduce the comparability of inter-company data."
+>
+> [SEC Division of Economic and Risk Analysis, *U.S. GAAP XBRL Custom Tags Trend for 2022-2024*](https://www.sec.gov/data-research/gaap-xbrl-custom-tags) (2 May 2024)
 
-- **The same standard tag can mean different things to different filers.** Workday
-  labels `us-gaap:OperatingExpenses` "Total costs and expenses" on its own income
-  statement; every other company here labels it "Total operating expenses". Workday's
-  figure therefore includes cost of revenue and the others' do not, so reading that
-  tag the same way for all of them overstated Workday's operating expenses by exactly
-  its cost of revenue, in 92 published values across 13 years.
-- **Not every filing that carries XBRL is a financial report.** Proxy statements
-  tag net income in their pay versus performance table, often in millions and
-  sometimes against the wrong year. A proxy is filed after the 10-K, so a naive
-  "latest wins" rule publishes Elastic's 2025 net loss as $0.4 million instead of
-  $108.1 million.
+> "The use of extensions significantly complicates data analysis, especially
+> when comparing reporting across companies."
+>
+> Qianhua Ling and Zhenfeng Liu, [*XBRL Data Comparability*](https://www.cpajournal.com/2019/08/21/xbrl-data-comparability/), The CPA Journal (July 2019)
+
+That study measured 48,079 annual filings and found that **on average 21% of
+the tags in an annual report are not drawn from the taxonomy at all**, and that
+in 2018 just 64 companies, about 1%, used none. SEC staff separately found that
+[roughly half of all filers create at least one custom axis tag](https://www.sec.gov/about/divisions-offices/division-economic-risk-analysis/office-structured-disclosure-staff/staff-observations-custom-axis-tags),
+and that doing so "can adversely impact the ability of investors and other
+market participants to compare and analyze financial statement data".
+
+Some of it is not even accidental. A peer reviewed study of SEC filers
+concluded that the evidence is "consistent with managers using extension
+elements strategically to increase XBRL complexity, obfuscating XBRL-tagged
+financial information" (Huang, No and Vasarhelyi, *Journal of Information
+Systems* 33(3), 2019, [doi:10.2308/isys-52162](https://doi.org/10.2308/isys-52162)).
+
+**Measured independently here, across these 28 companies:** 976 distinct custom
+tags, carrying 22,342 facts. **904 of their 1,103 usages, 82%, belong to exactly
+one company.** None of them maps to a canonical concept. A further 2,216
+standard tags carrying 355,484 facts are unmapped. And for the 16 concepts that
+are mapped, 58 different tags were needed.
 
 A query for "revenue" that assumes one tag silently returns nothing for
-CrowdStrike, and silently returns the wrong year's version for Salesforce.
-Resolving that is what this project does.
+CrowdStrike, which uses the `IncludingAssessedTax` variant, and silently
+returns nothing for the years before 2018, when `SalesRevenueNet` was retired.
 
-## Status
+## What this is
 
-| Phase | State | What it does |
-|---|---|---|
-| 0. Foundation | Built | Python project, tests, lint, CI |
-| 1. Ingestion | Built | Daily pull of SEC companyfacts and submissions into object storage |
-| 2. Staging | Built | Flattens nested JSON into one row per fact, tested and published |
-| 3. Mapping | Built | Maps raw tags to canonical concepts with confidence levels |
-| 4. Data Sets | Built | Dimensional facts and custom tags from SEC's quarterly Data Sets |
-| 5. Marts | Built | Comparable income statement, balance sheet, cash flow, confidence report |
-| 6. Linkbase | Built | Checks every mapping against the filings' own declared arithmetic |
-| 7. API | Built | FastAPI over the Parquet marts, documented from config |
+A config driven pipeline that ingests SEC XBRL filings, reconciles the tags
+back to a fixed set of canonical concepts, and publishes the result with its
+uncertainty attached rather than hidden.
 
-Running today: four scheduled workflows, 422 dbt nodes and 264 Python tests,
-408,213 facts from the JSON API plus 395,773 from the quarterly Data Sets, 16
-canonical concepts with a confidence level on every value, and **25,400 published
-figures** across 4,900 financial statements, served over HTTP at zero
-infrastructure cost.
+Two labels ride on every published number, and they answer different questions.
+**Confidence** says how the value was obtained: a standard tag the company
+filed, a weaker tag, or arithmetic. **Evidence** says what the filing's own
+declared calculations have to say about the mapping behind it. A value can be
+`high` confidence and `unexamined`, or `medium` and `confirmed`. Collapsing
+them into one score would throw away exactly the information that makes the
+dataset trustworthy.
 
-Every mapping is also checked against the filings' own declared arithmetic, from
-**45,647 calculation relationships** parsed out of 259 annual reports. That is what
-separates "a standard tag used consistently across the sector" from "the company's
-own statement says so": 463 values labelled only *medium* are confirmed by the
-filer's arithmetic, and 15,709 labelled *high* have no arithmetic behind them at
-all.
+Mislabelling is treated as expected, not as a failure condition. The pipeline
+publishes what it could not resolve alongside what it could, and both are
+queryable.
 
-The marts are published as Parquet: **1.4 MB for all twelve**, against a 92 MB
-database, so reading an income statement costs 101 KB and needs no warehouse.
+## What you get
 
-```sql
-select ticker, fiscal_year, revenue, gross_profit, gross_profit_confidence
-from 'mart_income_statement.parquet'
-where period_kind = 'annual' and calendar_year_equivalent = 2025
-order by revenue desc
-```
+- **A query page** that runs DuckDB in your browser against the real data. No
+  account, no server, no rate limit. One of its four tabs is called *What to
+  distrust*.
+- **A public API**, eleven routes, documentation generated from config, every
+  response carrying its own provenance.
+- **Twelve Parquet tables**, 1,397 KB for all of them, public and directly
+  queryable without this project's code.
+- **A framework, not just a dataset.** Adding a company is three lines of YAML.
+  Pointing the same machinery at a different structured source should need new
+  config and a new ingestion call, not new models.
 
-| ticker | fiscal_year | revenue | gross_profit | gross_profit_confidence |
-|---|---|---|---|---|
-| CRM | 2026 | 41,525 | 32,255 | high |
-| ADBE | 2025 | 23,769 | 21,218 | high |
-| INTU | 2025 | 18,831 | 15,139 | **derived** |
-| NOW | 2025 | 13,278 | 10,295 | high |
-| WDAY | 2026 | 9,552 | 7,231 | **derived** |
-
-Four different fiscal year labels, one comparable year. Intuit and Workday never
-tag gross profit at all, so theirs is computed from revenue and cost of revenue and
-says so.
+Running cost: **zero**. Nothing here needs a card on file.
 
 ## Architecture
 
-```mermaid
-flowchart TD
-    SEC[SEC EDGAR JSON APIs] -->|daily, only when a new report is filed| ING[Ingestion job]
-    CFG[config/companies.yml] --> ING
-    ING -->|raw snapshots, never modified| B2[(Backblaze B2)]
-    B2 --> DBT[dbt + DuckDB]
-    DBT -->|staging, then mapping, then marts| WH[(warehouse/xbrl.duckdb)]
-    WH --> B2
-    WH -->|8 marts as Parquet, 1.15 MB| PQ[(warehouse/parquet/)]
-    PQ --> B2
-    TF[Terraform] -.->|bucket, scoped key, CI secrets| B2
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/architecture-dark.svg">
+  <img alt="Architecture: SEC sources through GitHub Actions runners, Backblaze B2, dbt on DuckDB, to GHCR, Azure Container Apps and GitHub Pages, with Terraform provisioning the infrastructure" src="docs/images/architecture-light.svg">
+</picture>
 
-Both jobs run in GitHub Actions. Transform starts automatically when ingestion
-finishes. The runner is wiped after each run, so the database is fetched from
-storage, rebuilt, and published back.
+**[Explore the interactive version](https://sushantpatil2899.github.io/xbrl-reconcile/architecture.html)**,
+where every box links to the lines of source it was built from.
 
-A day with no new filings costs **one 15 MB download**: the staging models record
-which Data Set quarter and which filing they have already read, so the raw layer is
-not read again, and the database is stored gzipped. Before that work a run read 535
-files and 92 MB.
+There is no server. Every batch step is a GitHub Actions runner that is wiped
+afterwards, which is why the database is fetched from storage, rebuilt and
+published back on each run. Azure runs only the API, at zero replicas until a
+request arrives.
 
-## Design decisions
+| Stage | What it does | Detail |
+|---|---|---|
+| **Config** | Three YAML files decide the companies, what the tags mean, and every value the pipeline may produce. No ticker, CIK, tag or year appears in code. | [config.md](docs/config.md) |
+| **Ingestion** | Three SEC sources on three schedules, landed exactly as received. The JSON API alone is not enough: it silently drops every dimensional fact. | [ingestion.md](docs/ingestion.md) |
+| **Storage** | One Backblaze bucket, a raw zone nothing rewrites and a warehouse zone republished each run. DuckDB reads the raw layer in place over S3. | [storage.md](docs/storage.md) |
+| **Transform** | 458 dbt nodes in three layers on DuckDB, 18 staging and 11 intermediate models and 12 marts, with 22 hand written tests on top of the generated ones. | [transform.md](docs/transform.md) |
+| **Reconciliation** | Six decisions turn a filed tag into a number with a confidence level, including what to do when two candidate tags disagree. | [reconciliation.md](docs/reconciliation.md) |
+| **Evidence** | 45,647 declared calculation relationships parsed from 255 annual reports, used to check every mapping against the filer's own arithmetic. | [evidence.md](docs/evidence.md) |
+| **Marts** | Twelve published tables, three of which are worklists saying what is *not* covered. | [marts.md](docs/marts.md) |
+| **API** | FastAPI over the Parquet, marts baked into the image so it reads local files and scales to zero. | [api.md](docs/api.md) |
+| **Query page** | DuckDB compiled to WebAssembly, queries running in the reader's browser. | [page.md](docs/page.md) |
+| **Operations** | Eight workflows, Terraform across four providers, OIDC to Azure with no stored secret. | [operations.md](docs/operations.md) |
 
-Full reasoning is in [docs/design.md](docs/design.md). The ones that shape
-everything else:
+### How one tag earns its labels
 
-- **Config drives the pipeline.** Adding a company is three lines of YAML. No
-  ticker, CIK or tag name appears in code.
-- **Raw data is never modified.** Snapshots are written once with a UTC
-  timestamp and never overwritten, so an earlier view of the data is always
-  recoverable.
-- **Staging keeps every version of every fact.** Restatements are data, not
-  noise, and deduplicating early would throw away the evidence.
-- **Only new snapshots are processed.** The staging table's own `source_file`
-  column records what has been handled, so a quiet day reads nothing.
-- **Failures are separated by cause.** A broken transformation stops the
-  pipeline; one company's odd data is quarantined and the other 27 publish.
-- **Staleness is measured on a heartbeat**, not on data age, because companies
-  file about four times a year and a quiet fortnight is normal.
-- **A computed value is never dressed up as a reported one.** Totals recovered by
-  summing a company's own components carry their own confidence level, and the
-  identity used is recorded alongside the number.
-- **Two year labels, because a fiscal year is not a calendar year.** Sixteen of
-  these companies end their year in January, so one label spans 335 days. Every
-  period carries what the company calls the year and the calendar year it lines up
-  with, and no period is ever relabelled onto a quarter it did not report.
-- **A statement is published twice over.** Each line carries its latest figure and
-  the figure from one filing that reported the whole statement, because a company
-  can restate one line of an old balance sheet and never re-publish the rest.
-- **Statement layouts come from config.** The order concepts appear in
-  `config/tag_mappings.yml` is the order they appear on the statement, and the
-  columns are generated from it, so reordering a statement is a config edit.
-- **Evidence sits beside confidence rather than replacing it.** Confidence is a
-  declared judgement about a mapping; evidence is what the filing's own arithmetic
-  says. They disagree often enough to be worth separating, and a parser silently
-  rewriting what a published number claims about itself would defeat the point.
-- **Evidence is judged per filing, never per company.** A tag can be a total in one
-  year and a component in the next for the same filer. Asking whether a company ever
-  declared a relationship flags 115 values; asking whether the filing that reported
-  the number declares it flags 24.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/workflow-dark.svg">
+  <img alt="Workflow: a filed tag passes through config lookup, candidate ranking, an agreement gate, filing reconciliation and the calculation linkbase check before it is published" src="docs/images/workflow-light.svg">
+</picture>
 
-## Running it
+**[Explore the interactive version](https://sushantpatil2899.github.io/xbrl-reconcile/reconciliation.html)**
 
-### Locally, without any credentials
+## What the data shows
 
-```bash
-uv sync
-uv run pytest
-```
+Every figure below was measured against the marts published 2026-11-06, and
+every one comes with a way to check it yourself.
 
-To build the models against a local copy of the raw layer:
+### The problem is real, and this is its size
 
-```bash
-cd transform
-RAW_ROOT=/path/to/raw uv run dbt build --profiles-dir . --target dev
-```
+Sixteen concepts, 58 tags. Revenue needs nine of them on its own:
 
-### The API
-
-Needs nothing but the published Parquet, about 1.4 MB. Fetch it once, then run:
-
-```bash
-MARTS_PATH=./marts uv run xbrl-fetch-marts
-MARTS_PATH=./marts uv run uvicorn xbrl_reconcile.api.asgi:app --port 8000
-```
-
-Interactive documentation at `/docs`, the same thing laid out for reading at
-`/redoc`. Every parameter's allowed values and their meanings are generated from
-`config/vocabularies.yml`, so adding a company or a concept to config changes the
-documentation with no code change.
-
-Or in a container, with the data baked in so it needs no credentials to run:
-
-```bash
-docker build \
-  --secret id=b2_key_id,env=B2_INGEST_KEY_ID \
-  --secret id=b2_key,env=B2_INGEST_KEY \
-  -t xbrl-reconcile .
-docker run -p 8000:8000 xbrl-reconcile
-```
-
-Behind a load balancer, set `FORWARDED_ALLOW_IPS` to the proxy's address. uvicorn
-trusts `X-Forwarded-For` by default but only from `127.0.0.1`, so left unset every
-caller looks like the proxy and the rate limiter puts them all in one bucket. Do not
-set it to `*` unless nothing but that proxy can reach the port, because `*` trusts
-the header from whoever sent it.
-
-#### What a value looks like
-
-```bash
-curl 'localhost:8000/financials?tickers=WDAY&concepts=cost_of_revenue&from_year=2014&to_year=2014'
-```
-
-```json
-{
-  "ticker": "WDAY",
-  "concept": "cost_of_revenue",
-  "value": 264803000.0,
-  "unit": "USD",
-  "period_end": "2015-01-31",
-  "fiscal_year": 2015,
-  "calendar_year_equivalent": 2014,
-  "confidence": "medium",
-  "source_tag": "fsds:custom:CostOfRevenueSubscriptionAndSupport+us-gaap:TechnologyServicesCosts",
-  "evidence": "not_applicable",
-  "basis": "us_gaap",
-  "form": "10-K"
-}
-```
-
-Workday never reported a cost of revenue total for that year, only two components.
-`confidence: medium` says it was assembled and `source_tag` names both parts. Note
-also that `from_year=2014` found fiscal 2015: Workday's year ran February 2014 to
-January 2015, and a year range compares calendar years by default.
-
-#### A quarter no company files
-
-```bash
-curl 'localhost:8000/financials?tickers=CRM&concepts=revenue&period=quarter&from_year=2025&to_year=2025'
-```
-
-```
-Q1   9,829,000,000  high     us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax
-Q2  10,236,000,000  high     us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax
-Q3  10,259,000,000  high     us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax
-Q4  11,201,000,000  derived  derived:annual-nine_month
-```
-
-They sum to 41,525,000,000, which is the annual figure. The fourth is derived
-because the annual report covers the whole year instead of filing a fourth quarter,
-and it never pretends to be reported.
-
-#### Where the gaps are
-
-```bash
-curl 'localhost:8000/coverage?status=missing'
-```
-
-```
-total_rows 3
-INTU fy2026 cost_of_revenue      missing
-INTU fy2026 gross_profit         missing
-INTU fy2026 operating_expenses   missing
-```
-
-Three cells out of 5,056, all waiting on the SEC publishing a quarter. An API that
-can state its own gaps in three rows is a stronger claim than one that cannot answer
-the question. `/confidence?trust=check` is the companion: 147 of 4,900 statements
-where an identity fails or a line was ambiguous.
-
-#### A typo is an error, not an empty answer
-
-```bash
-curl 'localhost:8000/financials?tickers=GOOGL'   # 400
-```
-
-```json
-{
-  "error": "unknown ticker: 'GOOGL'",
-  "field": "ticker",
-  "value": "GOOGL",
-  "valid": ["ADBE", "ADSK", "BOX", "CRM", "CRWD", "..."]
-}
-```
-
-An empty result would be indistinguishable from a company that filed nothing.
-
-#### When not to use the API
-
-For the whole dataset rather than an answer, read the Parquet directly. DuckDB
-fetches only the byte ranges it needs, so this costs a few kilobytes of a 700 KB
-file and no server at all:
+| Tag used for `revenue` | Companies | Values |
+|---|---:|---:|
+| `us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax` | 26 | 1,228 |
+| `us-gaap:Revenues` | 12 | 427 |
+| `us-gaap:SalesRevenueNet` (retired 2018) | 5 | 145 |
+| `us-gaap:RevenueFromContractWithCustomerIncludingAssessedTax` | 1 | 52 |
+| four more, including two IFRS forms and two derived | | 211 |
 
 ```sql
-select ticker, fiscal_year, value, confidence
-from 'https://.../mart_financials.parquet'
-where concept = 'revenue' and period_kind = 'annual';
+select source_tag, count(distinct cik) companies, count(*) n
+from 'https://sushantpatil2899.github.io/xbrl-reconcile/mart_financials.parquet'
+where concept = 'revenue' group by 1 order by companies desc;
 ```
 
-### The query page
+The counts exceed 28 because companies change tags across years.
 
-A single HTML file that loads the Parquet with DuckDB compiled to WebAssembly and
-runs the queries **in the reader's browser**. No server, no account, no cold start.
+### What came out the other side
+
+**26,725 published values** across 28 companies, 16 concepts and fiscal years
+2007 to 2027.
+
+| Confidence | Values | Share |
+|---|---:|---:|
+| `high`, a standard tag the company filed | 21,121 | 79.0% |
+| `derived`, computed from other concepts | 3,799 | 14.2% |
+| `medium`, a retired tag, another rulebook, or a total reassembled | 1,805 | 6.8% |
+| `low` | 0 | 0% |
+
+| Evidence verdict | Values | Share |
+|---|---:|---:|
+| `confirmed`, the filing's own arithmetic does not contradict it | 21,910 | 82.0% |
+| `not_applicable`, no single source tag | 3,928 | 14.7% |
+| `unexamined`, that filing carries no calculation linkbase | 860 | 3.2% |
+| `equivalent`, declared a part, but equal to the total | 27 | 0.1% |
+| **`contradicted`** | **0** | **0%** |
 
 ```bash
-MARTS_PATH=docs/site uv run xbrl-fetch-marts
-cd docs/site && python3 -m http.server 8000
+curl -s '<api>/evidence/calculation?verdict=component_of_same_concept'
 ```
 
-It shows four things: all 28 companies lined up on one calendar year with the
-confidence on every figure, one company's values with the XBRL tag behind each,
-what to distrust, and a query box.
-
-Freshness is handled by treating `_index.json` as the version marker. It is fetched
-with `no-store`, and each Parquet is requested as `?v=<published_at>`, so a new
-publish is a new cache key while an unchanged one is served from cache. The page
-prints the publish time, so staleness is visible rather than silent.
-
-`.github/workflows/pages.yml` deploys the page and the current marts together, and
-then asserts the live `_index.json` matches the bucket. It is inert until the
-repository variable `PAGES_ENABLED` is set to `true`, which needs the repository
-public or a plan allowing Pages from a private one.
-
-### The full pipeline
-
-Needs a Backblaze B2 account (free tier), an HCP Terraform account for state,
-and a GitHub token. Terraform creates the bucket, a key scoped to it that
-cannot delete files, and the repository secrets the workflows use:
+Of 5,056 company and fiscal year and concept cells, **91.6% are reported and
+none are missing.** 1.6% are structurally impossible: US rules require three
+years of income statements but only two of balance sheets, so a company's
+earliest year has no balance sheet to read, and saying so is more useful than
+calling it a gap.
 
 ```bash
-cd infra/terraform
-terraform init && terraform plan
+curl -s '<api>/coverage?status=missing'   # 0 rows, of 5,056
 ```
 
-Every credential is read from the environment, so none of them sits in a file:
+### It tells you where it is weak
 
-| Variable | Read by | What it is |
-|---|---|---|
-| `TF_CLOUD_ORGANIZATION` | Terraform | HCP organisation holding the state |
-| `TF_WORKSPACE` | Terraform | HCP workspace within it |
-| `B2_APPLICATION_KEY_ID` | `b2` provider | Backblaze master key id, 12 characters |
-| `B2_APPLICATION_KEY` | `b2` provider | Its secret |
-| `GITHUB_TOKEN` | `github` provider | Token with `repo`, to write Actions secrets and variables |
-
-Azure is the exception and needs no variable. The `azurerm` provider takes its
-credentials from `az login`, so no Azure password or client secret is ever stored.
-The subscription id is a plain identifier rather than a secret and lives in
-`terraform.tfvars`, which is gitignored.
-
-Backblaze has two APIs and they do not take the same credentials. The Terraform
-provider uses the B2 native API, whose master key ID is 12 characters. Everything
-else here, this project's own code and DuckDB's httpfs, speaks the S3 compatible
-API, which **rejects the master application key outright**: it needs a key created
-under Account, Application Keys, whose ID is around 25 characters. A master key
-produces `InvalidAccessKeyId: Malformed Access Key Id`, before any permission is
-checked. Terraform creates a scoped key for exactly this reason.
-
-To read the published database locally, create a read only key limited to the
-bucket, then:
+Of 5,372 statements, 220 carry a `check` flag because an accounting identity
+fails, a line was ambiguous, or a line is newer than the filing it was read
+from. The dataset says which 220.
 
 ```bash
-export STORAGE_BACKEND=b2 B2_BUCKET=<bucket> B2_ENDPOINT=https://s3.<region>.backblazeb2.com
-export B2_INGEST_KEY_ID=<key id> B2_INGEST_KEY=<key>
-WAREHOUSE_PATH=transform/prod.duckdb uv run xbrl-fetch-warehouse
+curl -s '<api>/confidence?trust=check'   # 26 of the 632 annual statements
 ```
 
-Ingestion can also be run directly:
+Six of 543 candidate tag and concept pairs are flagged
+`component_of_same_concept`, and all six are real accounting rather than bugs:
+`StockholdersEquity` excludes noncontrolling interests, and `ProfitLoss` sits
+before the accretion on redeemable preferred stock. [evidence.md](docs/evidence.md)
+names each one.
+
+### One row, showing most of it
 
 ```bash
-SEC_CONTACT_EMAIL=you@example.com uv run xbrl-ingest      # SEC requires a contact
-SEC_CONTACT_EMAIL=you@example.com uv run xbrl-check-ciks  # verify config CIKs
+curl -s '<api>/financials?tickers=CRWD&concepts=revenue&period=annual&from_year=2024&to_year=2024'
 ```
+
+```json
+{
+  "ticker": "CRWD", "concept": "revenue", "value": 3953624000.0, "unit": "USD",
+  "period_end": "2025-01-31", "fiscal_year": 2025, "calendar_year_equivalent": 2024,
+  "confidence": "high",
+  "source_tag": "us-gaap:RevenueFromContractWithCustomerIncludingAssessedTax",
+  "evidence": "confirmed", "basis": "us_gaap", "form": "10-K"
+}
+```
+
+CrowdStrike is the only company here using that tag, so a query written for the
+common one returns nothing. Its fiscal 2025 is calendar 2024, so a year range
+has to say which label it means. And the number carries both how it was
+obtained and what CrowdStrike's own declared arithmetic says about it.
+
+> `<api>` above is
+> `https://ca-xbrl-reconcile-api.wonderfulwater-66905cf2.northcentralus.azurecontainerapps.io`
+
+## Scope, and growing past it
+
+Twenty eight software companies, deliberately. Revenue recognition is relatively
+homogeneous in one sector, which makes reconciliation tractable enough to get
+right before it is made broad. Banks and insurers are structurally different and
+are out of scope until the core works.
+
+Growing the list is a config edit and nothing else. The existing rules already
+cover all 28 companies, and most new ones need no new rule at all. When one
+does, the pipeline tells you which concept and which company, because
+`mart_mapping_coverage` and `mart_unmapped_tags` exist to be read as worklists.
+
+**[How to add a company →](docs/adding-a-company.md)**
+
+## Limitations, and what this is not
+
+- **Not investment advice, and not audited.** These are reconciled filings, not
+  a verified set of accounts. Check anything that matters against the filing.
+- **28 companies in one sector.** Nothing here is validated at the scale of
+  thousands of filers, which is where this problem is genuinely hard.
+- **976 custom tags are unmapped.** They are surfaced, counted and ranked, but
+  mapping them is open work.
+- **Most values are `unexamined` on quarterly reports** because quarterly
+  calculation linkbases are deliberately not fetched. An absence of evidence is
+  reported as such rather than as a pass.
+- **Confidence is a claim about the tag, not about the number.** A `high` value
+  can still be wrong if the filer made an error.
+- **Batch, not real time.** Ingestion runs daily at 06:00 UTC. SEC filings do
+  not need anything faster.
 
 ## Layout
 
 ```
-config/companies.yml        the 28 companies, date range, which forms count
+config/                     companies, tag mappings, vocabularies
 src/xbrl_reconcile/
-  config.py                 load and validate config
-  mappings.py               load and validate the tag mapping config
-  ingest/                   polite HTTP client, SEC endpoints, linkbases, storage, run loop
+  ingest/                   polite HTTP client, SEC endpoints, linkbases, storage
+  api/                      FastAPI app, queries, models
   warehouse.py              fetch and publish the built database
   publish_marts.py          export the marts as Parquet
 transform/
   models/staging/           one row per fact, typed, quarantining bad rows
   models/intermediate/      mapping, resolution, the period spine, derived values
-  models/marts/             the published facts, three statements, two reports
+  models/marts/             the published facts, three statements, four reports
   macros/                   snapshot selection, statement columns built from config
   tests/                    freshness, accounting identities, mart round trips
 infra/terraform/            bucket, scoped key, Actions secrets, the Azure host
-.github/workflows/          ci, ingest, ingest-datasets, ingest-linkbase, transform,
-                            pages, image, deploy
-docs/design.md              decisions and the reasoning behind them
+.github/workflows/          ci, ingest, ingest-datasets, ingest-linkbase,
+                            transform, pages, image, deploy
+docs/                       one page per stage, plus design.md
+docs/site/                  the query page and the interactive diagrams
 ```
 
-## Data source
+[docs/design.md](docs/design.md) is the full decision record: why each choice
+was made, what was measured, and the traps found along the way. The per stage
+pages above link into the relevant sections of it.
 
-SEC's free [data.sec.gov](https://data.sec.gov) APIs. Requests identify
-themselves with a contact email and stay within SEC's rate limits, as its
-access policy requires.
+## Data sources
+
+- [data.sec.gov](https://data.sec.gov), the companyfacts and submissions APIs
+- [SEC Financial Statement Data Sets](https://www.sec.gov/data-research/sec-markets-data/financial-statement-data-sets), published quarterly by the Division of Economic and Risk Analysis
+- Calculation linkbase XML from the EDGAR filing archive
+
+SEC data is public domain. Requests identify themselves with a contact address
+and stay inside SEC's published rate limits, as its
+[access policy](https://www.sec.gov/os/webmaster-faq#developers) requires.
+
+## Built with
+
+Python, [uv](https://docs.astral.sh/uv/), [DuckDB](https://duckdb.org),
+[dbt](https://www.getdbt.com), [FastAPI](https://fastapi.tiangolo.com),
+[Terraform](https://developer.hashicorp.com/terraform), GitHub Actions,
+Backblaze B2 and Azure Container Apps. Diagrams by
+[Archify](https://github.com/tt-a1i/archify).
+
+## License
+
+[MIT](LICENSE).
 
 ## Author
 
