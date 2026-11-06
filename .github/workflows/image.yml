@@ -86,20 +86,38 @@ jobs:
       # and an image that will not start is indistinguishable from a broken deploy later.
       # So run it here, on the runner, and ask it a real question before anything is
       # rolled out.
+      # The container's own logs are printed before anything is allowed to fail. Steps
+      # run under bash -e, so a failing curl placed above them aborts the step and
+      # throws away the only evidence of why the image did not start.
       - name: Check the image actually serves
         run: |
           image="ghcr.io/${{ github.repository }}:${{ github.run_id }}"
           docker run -d --name api -p 8000:8000 "$image"
-          for i in $(seq 1 30); do
+
+          answered=
+          for i in $(seq 1 40); do
             if curl -fsS http://localhost:8000/healthz >/dev/null 2>&1; then
-              echo "answered after ${i}s"
+              answered=$i
               break
             fi
             sleep 1
           done
+
+          echo "--- container state ---"
+          docker inspect -f 'status={{.State.Status}} exit={{.State.ExitCode}}' api || true
+          echo "--- container logs ---"
+          docker logs api 2>&1 | tail -40 || true
+          echo "-----------------------"
+
+          if [ -z "$answered" ]; then
+            echo "no answer on /healthz after 40s"
+            docker rm -f api >/dev/null || true
+            exit 1
+          fi
+
+          echo "answered after ${answered}s"
           curl -fsS http://localhost:8000/healthz
           echo
-          docker logs api | tail -20
           docker rm -f api >/dev/null
 
       - name: Report what was published
