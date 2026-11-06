@@ -111,9 +111,11 @@ accepts a deployment rather than when every CDN edge serves it. Section 17 of
 deployment is keyed by the commit, and `deploy-pages` names that commit as the
 deployment id when it gives up. Dispatching `pages` again on the same commit
 therefore tries to recreate a deployment that was just cancelled, and times out
-the same way; a new commit deploys immediately. The site keeps serving its last
-published build throughout, so a failed deploy is a staleness problem rather
-than an outage. Note also that the Pages API reports `status: null` for this
+the same way; a new commit deploys immediately. This does not affect the daily
+chain, which deploys the same commit every run until someone pushes: one commit
+deployed twice hours apart and both succeeded. Only a commit whose deployment
+was cancelled is blocked. The site keeps serving its last published build
+throughout, so a failed deploy is a staleness problem rather than an outage. Note also that the Pages API reports `status: null` for this
 site whether or not a deploy just succeeded, because it is built by workflow
 rather than the legacy builder, so that field says nothing about health.
 

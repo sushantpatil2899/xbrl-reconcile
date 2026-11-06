@@ -2320,17 +2320,33 @@ Left open by hosting, in rough order of value:
 
   | Run | Commit | `deploy-pages` |
   |---|---|---|
-  | 13:33, chained | `f37c0b7` | success in 8 seconds |
+  | 04:57, dispatched | `f37c0b7` | success |
+  | 13:33, chained | `f37c0b7` again | success in 8 seconds |
   | 15:46, dispatched | `c117ea5` | stalled in `updating_pages`, timed out at 10 minutes |
   | 16:05, dispatched | `c117ea5` again | status came back empty, timed out the same way |
   | 16:30, dispatched | `e9c2a7a` | success |
 
   The log names what it gives up on: "Canceled deployment with ID c117ea51e86e...",
-  which is the commit SHA. The second and third runs were therefore competing for one
-  deployment id, the third trying to recreate what the second had just cancelled. Why
-  the second stalled is not established and was not reported on GitHub's status page;
-  that it could not then be retried on the same commit is. The practical rule is that
-  a stalled Pages deploy is retried by pushing a commit, not by dispatching again.
+  which is the commit SHA. The third and fourth runs were therefore competing for one
+  deployment id, the fourth trying to recreate what the third had just cancelled. Why
+  the third stalled is not established and was not reported on GitHub's status page;
+  that it could not then be retried on the same commit is.
+
+  **The first two rows are why this does not threaten the daily chain.** `f37c0b7`
+  deployed twice, hours apart, and both succeeded, so redeploying a commit is ordinary
+  and safe. That matters because `pages` deploys whatever the default branch points at,
+  so every scheduled run uses the same commit until someone pushes. The blocked case is
+  narrower than "the same commit": it is a commit whose previous deployment was
+  cancelled, which routine operation never produces. The practical rule is that a
+  stalled Pages deploy is recovered by pushing a commit, not by dispatching again.
+
+  What that leaves open is recovery rather than operation. A stall blocks its own commit
+  until a push, and the next scheduled run would use that same commit, so a stall does
+  not clear itself on the evidence here. Whether it clears after longer is unknown: the
+  two attempts above were nineteen minutes apart. The failure mode is staleness and not
+  an outage, and detection suits it better than prevention, so the Datadog synthetic
+  test below is the mitigation rather than a retry in this workflow. A retry cannot help
+  when retrying the same commit is the thing that fails.
 
   Two things that look alarming here are not. `deploy-pages` times out at ten minutes
   and the job allows fifteen, so the action cancels the stuck deployment itself rather
