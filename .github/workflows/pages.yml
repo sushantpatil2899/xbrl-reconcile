@@ -53,6 +53,14 @@ jobs:
       - name: Fetch the marts into the site
         run: MARTS_PATH=docs/site uv run xbrl-fetch-marts
 
+      # Archify emits each diagram as a standalone file that knows nothing about the
+      # site around it, so the three pages would otherwise have different navigation
+      # and the bar would jump as a reader crossed between them. This gives them the
+      # same header the hand written index carries. It is keyed on a marker comment,
+      # so a re-run is a no-op rather than two headers.
+      - name: Give the diagram pages the site header
+        run: python3 scripts/add_site_chrome.py docs/site
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:

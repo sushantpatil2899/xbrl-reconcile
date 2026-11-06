@@ -41,3 +41,9 @@ docs/site/_index.json
 
 # Brag output
 brag-output/
+
+# Brainstorming mockups, local only
+.superpowers/
+
+# Playwright scratch output, local only
+.playwright-mcp/
