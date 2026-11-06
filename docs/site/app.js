@@ -352,10 +352,10 @@ async function showCompare() {
     td(r.source_tag || "", "tg") +
     td(pill(r.confidence)) +
     "</tr>");
-  sparklines(concept);
+  sparklines(concept, year);
 }
 
-async function sparklines(concept) {
+async function sparklines(concept, year) {
   const data = await query(
     `select ticker, calendar_year_equivalent as y, value
      from 'mart_financials.parquet'
@@ -366,29 +366,47 @@ async function sparklines(concept) {
   const byTicker = new Map();
   for (const r of data) {
     if (!byTicker.has(r.ticker)) byTicker.set(r.ticker, []);
-    byTicker.get(r.ticker).push(Number(r.value));
+    byTicker.get(r.ticker).push({ y: Number(r.y), v: Number(r.value) });
   }
+
   const spk = $("spk");
   spk.innerHTML = "";
   for (const [ticker, series] of byTicker) {
     if (series.length < 2) continue;
-    const lo = Math.min(...series);
-    const hi = Math.max(...series);
+    const vals = series.map((p) => p.v);
+    const lo = Math.min(...vals);
+    const hi = Math.max(...vals);
     const span = hi - lo || 1;
-    const pts = series.map((v, i) => [
+    const xy = series.map((p, i) => [
       (i / (series.length - 1)) * 100,
-      28 - ((v - lo) / span) * 24,
+      28 - ((p.v - lo) / span) * 24,
     ]);
+
+    // The line is the filer's whole history; the dot is the year being compared, so
+    // changing the year moves the marker and the figure instead of leaving the card
+    // looking identical while the table underneath changes.
+    const at = series.findIndex((p) => p.y === year);
+    const marker =
+      at >= 0
+        ? `<circle cx="${xy[at][0].toFixed(1)}" cy="${xy[at][1].toFixed(1)}" r="3.2"
+             fill="var(--high)" stroke="#fff" stroke-width="1.6"
+             vector-effect="non-scaling-stroke"/>`
+        : "";
+    const shown = at >= 0 ? series[at].v : null;
+
     const d = document.createElement("div");
-    d.className = "c";
+    d.className = "c" + (at >= 0 ? "" : " absent");
     d.innerHTML =
       `<div class="r"><span class="t">${ticker}</span>` +
-      `<span class="v">${money(series[series.length - 1] / 1e6)}M</span></div>` +
-      `<svg viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><path d="M` +
-      pts.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" L") +
-      `"/></svg>`;
+      `<span class="v">${
+        shown === null ? `<span class="muted">no ${year}</span>` : money(shown / 1e6) + "M"
+      }</span></div>` +
+      `<svg viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">` +
+      `<path d="M${xy.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" L")}"/>` +
+      `${marker}</svg>`;
     spk.appendChild(d);
   }
+
   requestAnimationFrame(() =>
     spk.querySelectorAll("path").forEach((p) => p.style.setProperty("--L", p.getTotalLength())),
   );
