@@ -93,4 +93,16 @@ EXPOSE 8000
 #   Do not set it to "*" unless nothing but that proxy can reach this port. "*" trusts
 #   the header from whoever sent it, so any caller can forge an address and the
 #   limiter stops limiting. Prefer --no-proxy-headers when nothing is in front.
-CMD ["sh", "-c", "uv run uvicorn xbrl_reconcile.api.asgi:app --host 0.0.0.0 --port ${PORT}"]
+# The venv's own uvicorn, not uv run. uv run is not a launcher: it re-resolves the
+# project and syncs the environment before executing anything, so at startup it pulled
+# the dev dependencies the build had just excluded with --no-dev and then died trying to
+# rewrite entry points in a .venv owned by root while running as api:
+#
+#   error: failed to remove file `/app/.venv/.../bin/xbrl-check-ciks`:
+#   Permission denied (os error 13)
+#
+# Calling the binary directly removes uv from the runtime path altogether: no
+# resolution, no network, no writes, and a container that starts immediately. That last
+# part matters more than it looks, because this runs scaled to zero and a cold start is
+# charged to whoever sent the first request.
+CMD ["sh", "-c", ".venv/bin/uvicorn xbrl_reconcile.api.asgi:app --host 0.0.0.0 --port ${PORT}"]
