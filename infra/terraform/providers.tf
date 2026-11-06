@@ -1,5 +1,14 @@
 # Reads B2_APPLICATION_KEY_ID and B2_APPLICATION_KEY from the environment.
-provider "b2" {}
+#
+# endpoint is pinned rather than left to default, because the provider also reads it
+# from B2_ENDPOINT and this project exports that name with the S3 compatible endpoint,
+# which everything else here speaks. Inherited, it sends a native API call to the S3
+# host and Backblaze answers NotImplemented, which reads like a credential problem and
+# is not one. One variable name cannot serve two incompatible APIs, so this provider
+# stops reading it.
+provider "b2" {
+  endpoint = "production"
+}
 
 # Reads GITHUB_TOKEN from the environment.
 provider "github" {

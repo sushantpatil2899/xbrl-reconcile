@@ -14,6 +14,16 @@
 # start instead. Raising min_replicas to one is the one setting to change if that
 # trade stops being worth it.
 #
+# The region is not a free choice. An Azure for Students subscription carries a policy
+# assignment named "Allowed resource deployment regions" that permits only norwayeast,
+# swedencentral, denmarkeast, westus and northcentralus, and denies everything else
+# outright with RequestDisallowedByAzure. Denmark East has no Container Apps, which
+# leaves four. North Central US is Illinois and the nearest of them to the east coast.
+#
+# The policy runs in Indexed mode, so it skips resource groups. That is why a resource
+# group can be created in a forbidden region and only the resources inside it fail,
+# which makes the error look like a problem with the resource rather than the region.
+#
 # No Log Analytics workspace is attached. Omitting logs_destination leaves logs
 # streamed only, which keeps the live log stream usable for debugging while storing
 # nothing and charging nothing. Datadog is the observability story here, and it reaches

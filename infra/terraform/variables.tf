@@ -25,7 +25,7 @@ variable "azure_subscription_id" {
 }
 
 variable "azure_location" {
-  description = "Azure region for the API. East US 2 is Virginia, which is both cheap and close to the eastern United States."
+  description = "Azure region for the API. Must be one the subscription policy permits, which is a much shorter list than Azure's."
   type        = string
-  default     = "eastus2"
+  default     = "northcentralus"
 }
