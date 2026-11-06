@@ -332,6 +332,21 @@ cd infra/terraform
 terraform init && terraform plan
 ```
 
+Every credential is read from the environment, so none of them sits in a file:
+
+| Variable | Read by | What it is |
+|---|---|---|
+| `TF_CLOUD_ORGANIZATION` | Terraform | HCP organisation holding the state |
+| `TF_WORKSPACE` | Terraform | HCP workspace within it |
+| `B2_APPLICATION_KEY_ID` | `b2` provider | Backblaze master key id, 12 characters |
+| `B2_APPLICATION_KEY` | `b2` provider | Its secret |
+| `GITHUB_TOKEN` | `github` provider | Token with `repo`, to write Actions secrets and variables |
+
+Azure is the exception and needs no variable. The `azurerm` provider takes its
+credentials from `az login`, so no Azure password or client secret is ever stored.
+The subscription id is a plain identifier rather than a secret and lives in
+`terraform.tfvars`, which is gitignored.
+
 Backblaze has two APIs and they do not take the same credentials. The Terraform
 provider uses the B2 native API, whose master key ID is 12 characters. Everything
 else here, this project's own code and DuckDB's httpfs, speaks the S3 compatible
@@ -372,8 +387,8 @@ transform/
   models/marts/             the published facts, three statements, two reports
   macros/                   snapshot selection, statement columns built from config
   tests/                    freshness, accounting identities, mart round trips
-infra/terraform/            bucket, scoped key, Actions secrets and variables
-.github/workflows/          ci, ingest, ingest-datasets, ingest-linkbase, transform
+infra/terraform/            bucket, scoped key, Actions secrets, the Azure host
+.github/workflows/          ci, ingest, ingest-datasets, ingest-linkbase, transform, pages
 docs/design.md              decisions and the reasoning behind them
 ```
 

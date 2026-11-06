@@ -18,3 +18,14 @@ variable "sec_contact_email" {
   type        = string
   sensitive   = true
 }
+
+variable "azure_subscription_id" {
+  description = "Azure subscription the API resources are created in, from the portal under Subscriptions"
+  type        = string
+}
+
+variable "azure_location" {
+  description = "Azure region for the API. East US 2 is Virginia, which is both cheap and close to the eastern United States."
+  type        = string
+  default     = "eastus2"
+}

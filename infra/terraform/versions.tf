@@ -6,6 +6,10 @@ terraform {
   cloud {}
 
   required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 5.13"
+    }
     b2 = {
       source  = "Backblaze/b2"
       version = "~> 0.14"
