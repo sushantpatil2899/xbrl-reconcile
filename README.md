@@ -388,7 +388,8 @@ transform/
   macros/                   snapshot selection, statement columns built from config
   tests/                    freshness, accounting identities, mart round trips
 infra/terraform/            bucket, scoped key, Actions secrets, the Azure host
-.github/workflows/          ci, ingest, ingest-datasets, ingest-linkbase, transform, pages
+.github/workflows/          ci, ingest, ingest-datasets, ingest-linkbase, transform,
+                            pages, image, deploy
 docs/design.md              decisions and the reasoning behind them
 ```
 

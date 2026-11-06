@@ -1,0 +1,109 @@
+name: deploy
+
+# Rolls the image that the image workflow just published onto Azure.
+#
+# Separate from building on purpose. The marts are baked into the image and change
+# daily, so a rollout happens far more often than anything else, and a data refresh
+# must never be able to alter a resource group. Terraform owns the infrastructure and
+# ignores the running image; this workflow owns the running image and touches nothing
+# else. The identity it uses can only reach the one resource group.
+#
+# No Azure secret is stored anywhere. The app registration carries a federated
+# credential naming this repository and this branch, so Actions exchanges its own OIDC
+# token for an Azure one at run time and a token issued for any other repository or
+# branch is refused.
+#
+# The tag is the image workflow's run id rather than a fixed name, because a fixed tag
+# does not change and so cannot produce a new revision: Azure would see the same image
+# reference and do nothing.
+
+on:
+  workflow_run:
+    workflows: [image]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Image tag to deploy, normally the run id of an image build
+        default: latest
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    # Deploying an image whose own build failed would roll out something that was never
+    # proved to start. A manual run is always allowed, because that is how a rollback or
+    # a fix gets applied.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      IMAGE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.id }}
+
+    steps:
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # Added explicitly rather than left to dynamic install, so the version in use is a
+      # decision rather than whatever the runner image happens to resolve that morning.
+      - name: Install the containerapp extension
+        run: az extension add --name containerapp --only-show-errors
+
+      - name: Roll out the image
+        run: |
+          image="ghcr.io/${{ github.repository }}:${IMAGE_TAG}"
+          echo "deploying $image"
+          az containerapp update \
+            --name "${{ vars.AZURE_CONTAINER_APP }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --image "$image" \
+            --only-show-errors \
+            --output none
+
+      # Two separate questions, because either can be true while the other is false.
+      #
+      # Azure can report a revision healthy while the ingress still sends traffic to the
+      # previous one, and the endpoint can answer perfectly well from that previous
+      # revision, which looks like a successful deploy and is not one. So this checks
+      # that the live revision is running the image we just named, and separately that
+      # the public URL answers.
+      - name: Check the deployed image is the one serving
+        run: |
+          image="ghcr.io/${{ github.repository }}:${IMAGE_TAG}"
+          app="${{ vars.AZURE_CONTAINER_APP }}"
+          group="${{ vars.AZURE_RESOURCE_GROUP }}"
+
+          for i in $(seq 1 40); do
+            active=$(az containerapp revision list --name "$app" --resource-group "$group" \
+              --query "[?properties.active] | [0].{image: properties.template.containers[0].image, health: properties.healthState}" \
+              -o json --only-show-errors)
+            running=$(echo "$active" | python3 -c 'import json,sys; print(json.load(sys.stdin)["image"])')
+            health=$(echo "$active" | python3 -c 'import json,sys; print(json.load(sys.stdin)["health"])')
+            echo "attempt $i: $running ($health)"
+            if [ "$running" = "$image" ] && [ "$health" = "Healthy" ]; then
+              break
+            fi
+            sleep 5
+          done
+
+          if [ "$running" != "$image" ] || [ "$health" != "Healthy" ]; then
+            echo "active revision is $running ($health), expected $image (Healthy)"
+            exit 1
+          fi
+
+          fqdn=$(az containerapp show --name "$app" --resource-group "$group" \
+            --query "properties.configuration.ingress.fqdn" -o tsv --only-show-errors)
+
+          echo "--- https://$fqdn/healthz ---"
+          curl -fsS --retry 5 --retry-all-errors --retry-delay 5 --max-time 120 "https://$fqdn/healthz"
+          echo

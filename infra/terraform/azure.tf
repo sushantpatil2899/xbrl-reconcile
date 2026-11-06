@@ -139,17 +139,23 @@ resource "azurerm_container_app" "api" {
       template[0].polling_interval_in_seconds,
       ingress[0].traffic_weight,
 
-      # The running image is deliberately NOT ignored yet.
+      # The running image belongs to the deploy workflow now, not to this file. The marts
+      # are baked in and change daily, so a rollout happens far more often than anything
+      # else here, and a data refresh must never be able to alter a resource group. The
+      # workflow deploys a tag named after the build's run id, because a fixed tag does
+      # not change and so cannot produce a new revision.
       #
-      # It will be, once the workflow owns rollouts: the marts are baked in and change
-      # daily, so a rollout happens far more often than anything else here and a data
-      # refresh must never be able to alter a resource group.
+      # Added only now that the image is already correct, which is the whole lesson of
+      # the attempt before this one. Ignored from the start, Terraform left the
+      # placeholder image in place while still moving target_port to 8000, pointing the
+      # ingress at a port the quickstart container does not listen on, and the plan said
+      # so by containing no image change at all. A value has to be right before it can
+      # be ignored.
       #
-      # But ignoring it before it is correct inverts the order and breaks the app.
-      # Ignored from the start, Terraform would leave the placeholder image in place
-      # while still moving target_port to 8000, pointing the ingress at a port the
-      # quickstart container does not listen on, with no deploy workflow yet existing
-      # to put the right image there. An image must be right before it can be ignored.
+      # The edge is deliberate: changing api_image_tag now deploys nothing. The only way
+      # to change what is running is the deploy workflow, or az containerapp update by
+      # hand.
+      template[0].container[0].image,
     ]
   }
 
