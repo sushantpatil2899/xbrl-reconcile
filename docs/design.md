@@ -1,8 +1,8 @@
 # xbrl-reconcile: Design
 
-Status: Phases 0 to 7 built. Sections 16 and 17 record which decisions are closed and
-which are still open.
-Last updated: 2026-11-05
+Status: Phases 0 to 7 built, and the API hosted. Sections 16 and 17 record which
+decisions are closed and which are still open.
+Last updated: 2026-11-06
 
 ## 1. Goal
 
@@ -2242,4 +2242,109 @@ Left open by that work:
   worth the complexity.
 
 Phase 7 (API)
-- Hosting: local only, or a student credit host. Not a dependency of the pipeline.
+
+- **Hosting: built on 2026-11-06.** The note said local only or a student credit host.
+  It is now Azure Container Apps, on the Azure for Students subscription, provisioned by
+  Terraform in `infra/terraform/azure.tf`, serving the image built by
+  `.github/workflows/image.yml` and rolled out by `.github/workflows/deploy.yml`.
+
+  Container Apps was chosen for one reason that decides it: an app scaled to zero
+  replicas costs nothing. The consumption plan gives every subscription 180,000 vCPU
+  seconds, 360,000 GiB seconds and 2 million requests free each calendar month, which at
+  the smallest size allowed is about 200 hours of active runtime a month. Holding a
+  replica warm is the thing that would cost money: a quarter vCPU for thirty days is
+  648,000 vCPU seconds, three and a half times the grant, billed at the idle rate for
+  roughly four dollars a month. So `min_replicas` is zero and the first request after a
+  quiet spell pays a cold start instead.
+
+  The registry is GHCR rather than Azure Container Registry, which has no free tier and
+  bills a flat 0.167 dollars a day, 61 dollars a year to store one small image, against
+  GHCR being free for container storage and bandwidth. Building was never the question:
+  the Dockerfile mounts the bucket credentials as a BuildKit secret so they touch one
+  layer and are recorded in none, and Actions supports that where a platform builder
+  generally does not. The cost of skipping ACR is that pulling a private image needs a
+  stored token where a managed identity would need none, and that token ends the day the
+  package goes public.
+
+  Terraform owns the infrastructure and ignores the running image; the deploy workflow
+  owns the running image and touches nothing else. The marts are baked into the image and
+  change daily, so a rollout happens far more often than anything else, and a data
+  refresh must never be able to alter a resource group. Actions authenticates by OIDC
+  against a federated credential naming this repository and branch, so no Azure secret is
+  stored anywhere, and the identity it uses can reach only the one resource group.
+
+Left open by hosting, in rough order of value:
+
+- **The automatic chain has never run.** `image` and `deploy` were both triggered by
+  hand. The chain is `ingest` on cron, then `transform`, `image`, `deploy`, which is
+  three levels of `workflow_run`, and GitHub chains no more than three. So `deploy` fires
+  with zero headroom and anything chained after it would silently never run. Dispatching
+  `transform` would not test this, because that makes transform the initial workflow and
+  shortens the chain. The first real exercise is a scheduled ingest.
+- **Datadog synthetic tests.** The student pack carries Datadog free for up to two years,
+  US5 region only. Synthetic tests run from Datadog's own infrastructure against the
+  public URL, so they need no agent, no memory on the container and no workflow, which
+  also means they add no level to the chain above. This is the next thing to build.
+- **The root module mixes three providers.** Backblaze, GitHub and Azure share one root
+  module and one HCP workspace, so Azure work cannot be done without Backblaze and GitHub
+  credentials present. That blocked two steps while hosting was being built, once on a
+  `terraform import` that needed only Azure. Splitting it into two root modules with two
+  workspaces would fix it, at the cost of a state migration.
+- **The GHCR pull token expires.** It is a classic personal access token scoped to
+  `read:packages`, held as a Container Apps secret, which means it also exists in HCP
+  state, encrypted at rest but really there. Its failure mode is narrow and quiet: when it
+  expires, new revisions cannot pull while the running revision keeps serving, so it
+  breaks at deploy time rather than at request time. Making the package public removes the
+  token, the state exposure and the failure mode together, and that is only possible once
+  the repository is public, because the image carries the source.
+- **The page has no custom domain.** Pages publishes at
+  `sushantpatil2899.github.io/xbrl-reconcile`, reached only after deleting a stale `CNAME`
+  from the user site repository that claimed a domain now served by Vercel. The side
+  effect is that `sushantpatil2899.github.io` serves that repository's one line README
+  instead of redirecting. A DNS `CNAME` for a subdomain pointing at
+  `sushantpatil2899.github.io`, set as this repository's custom domain, fixes both.
+- **The README's counts are stale.** It claims 422 dbt nodes and 264 Python tests where
+  the measured figures are 456 and 278. Worth correcting before the repository is public,
+  as its own change where the numbers are measured rather than remembered.
+
+Traps found while hosting, each of which reported something other than its cause:
+
+- **`B2_ENDPOINT` poisons the `b2` Terraform provider.** The provider reads its
+  `endpoint` from that variable, the same name this project exports with the S3
+  compatible endpoint that everything else speaks. Inherited, it sends a native API call
+  to the S3 host, Backblaze answers `NotImplemented`, and `b2sdk` surfaces that several
+  exception layers below `provider_authorize_account`, so it reads as bad credentials.
+  Correct keys produce the identical error. Pinned to `production` in `providers.tf`.
+- **The region was never ours to choose.** Azure for Students carries a policy assignment
+  named "Allowed resource deployment regions" permitting only norwayeast, swedencentral,
+  denmarkeast, westus and northcentralus, denying anything else with
+  `RequestDisallowedByAzure`. Denmark East has no Container Apps. The policy runs in
+  Indexed mode, so it skips resource groups, which is why a group is created happily in a
+  forbidden region and only the resources inside it fail.
+- **Azure is eventually consistent and it orphans resources.** The environment was
+  created, the app's immediate read of it returned 404, the apply aborted, and because the
+  provider never got its confirming read the environment was never written to state: Azure
+  had it, Terraform did not, and the next apply failed with "already exists". Recovered by
+  import, prevented since by a `time_sleep` keyed on the environment id.
+- **An absent block is not a neutral omission.** Azure creates a Consumption workload
+  profile on every environment and an `http-scaler` rule on every app. Undeclared, every
+  plan proposed removing both, and the provider documentation is explicit that an
+  environment created with profiles must keep at least one. That modification, not the
+  lag, was what kept failing.
+- **`ignore_changes` must come after a value is correct, never before.** Adding the image
+  to `ignore_changes` in the same change that set it left the placeholder in place while
+  still moving `target_port` to 8000, pointing the ingress at a port the quickstart
+  container does not listen on. The plan said so by containing no image change at all.
+- **The Dockerfile had never been built, and did not work.** `B2_BUCKET` and `B2_ENDPOINT`
+  are required by the storage factory with no defaults and were never passed. The marts
+  fetch would have been served from cache on every build after the first, since none of
+  its other inputs change from day to day, silently shipping whichever marts the first
+  build saw. And `uv run` as an entrypoint is not a launcher: it re-resolved the project
+  at startup, pulled the dev dependencies `--no-dev` had just excluded, and died
+  rewriting a root owned `.venv` as the non-root user. Only the last was caught by
+  running the image, and the build and push had both succeeded without it.
+- **GitHub presents an immutable OIDC subject.** Not the plain
+  `repo:owner/name:ref:...` most documentation shows, but one embedding the numeric owner
+  and repository ids so renaming either cannot carry the trust across. A credential
+  registered with the documented shape is rejected with `AADSTS700213`, which names the
+  subject it actually saw. Read it out of that error rather than assuming.
