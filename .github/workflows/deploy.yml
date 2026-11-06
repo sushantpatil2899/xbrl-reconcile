@@ -13,6 +13,17 @@ name: deploy
 # token for an Azure one at run time and a token issued for any other repository or
 # branch is refused.
 #
+# The subject GitHub presents is not the form most documentation shows. It is immutable,
+# embedding the numeric owner and repository ids so that renaming either cannot carry
+# the trust across:
+#
+#   repo:sushantpatil2899@220011437/xbrl-reconcile@1373479244:ref:refs/heads/main
+#
+# A credential registered with the plain repo:owner/name:ref:... form is rejected with
+# AADSTS700213, naming the subject it actually saw. Both forms are registered on the app
+# so either is accepted. If this ever has to be rebuilt, read the subject out of that
+# error rather than assuming the documented shape.
+#
 # The tag is the image workflow's run id rather than a fixed name, because a fixed tag
 # does not change and so cannot produce a new revision: Azure would see the same image
 # reference and do nothing.
