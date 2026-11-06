@@ -79,8 +79,24 @@ jobs:
           # Keeps the dependency install, which is the slow layer, between runs. The
           # marts fetch deliberately sits below a cache key that changes every run, so
           # this speeds the build without ever serving stale data.
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          #
+          # The cache lives in GHCR rather than in the Actions cache, because the
+          # Actions cache refuses writes from this workflow. GitHub grants only
+          # read access to the default branch cache scope for triggers it treats as
+          # low trust, and workflow_run is named as one of them, so a chained run
+          # built the image and then failed exporting the cache with "token has no
+          # writable scopes". Manual runs could write and chained runs could not,
+          # which is why this passed until the chain first ran on its own.
+          #
+          # GitHub documents a cache-mode override that would force write access, and
+          # also warns that it reintroduces cache poisoning risk for exactly this
+          # trigger. A registry cache avoids the question: the run already holds
+          # packages: write for the push, GHCR storage and bandwidth are free, and it
+          # refreshes on the daily path rather than only when someone runs this by
+          # hand. The bucket credentials are a BuildKit secret mount, which is
+          # recorded in no layer and so reaches no cache.
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache,mode=max
 
       # Proof rather than trust. The build can succeed with an image that will not start,
       # and an image that will not start is indistinguishable from a broken deploy later.

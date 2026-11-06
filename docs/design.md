@@ -2275,12 +2275,48 @@ Phase 7 (API)
 
 Left open by hosting, in rough order of value:
 
-- **The automatic chain has never run.** `image` and `deploy` were both triggered by
-  hand. The chain is `ingest` on cron, then `transform`, `image`, `deploy`, which is
-  three levels of `workflow_run`, and GitHub chains no more than three. So `deploy` fires
-  with zero headroom and anything chained after it would silently never run. Dispatching
-  `transform` would not test this, because that makes transform the initial workflow and
-  shortens the chain. The first real exercise is a scheduled ingest.
+- **The automatic chain has run: 2026-11-06, and it reached the end.** The scheduled
+  `ingest` fired at 13:31 UTC and `transform` succeeded. `pages` and `image` both ran off
+  it, and `deploy` was triggered by `workflow_run` at the third level and skipped by its
+  own guard because `image` had failed. That skip is the useful evidence: the trigger
+  arrived, so GitHub's three level limit does not cut the chain short where it was feared
+  to. `deploy` still has zero headroom, and a fourth level would silently never run, so
+  the constraint on what can be added later stands.
+
+  Both leaves failed, each on something only a chained run could reveal.
+
+  **`image` could not write its build cache.** It built the image, then died exporting
+  `cache-to: type=gha` with "cache write denied: token has no writable scopes". GitHub
+  grants only read access to the default branch cache scope for triggers it treats as
+  low trust, and `workflow_run` is named as one of them, alongside `pull_request_target`
+  and `issue_comment`. Only `push`, `workflow_dispatch`, `repository_dispatch`, `delete`,
+  `registry_package`, `page_build` and `schedule` may create or overwrite those caches.
+  Every earlier `image` run was dispatched by hand, which is why this passed three times
+  and then failed the first time it mattered: the configuration was only ever exercised
+  on the one trigger that could write. The fix moves the cache to GHCR
+  (`type=registry,ref=...:buildcache`), where the run's existing `packages: write` is
+  enough and storage is free. GitHub documents a `cache-mode: write` override that would
+  force the Actions cache open, and warns in the same place that it reintroduces cache
+  poisoning risk for exactly this trigger, so it was not used. Dropping `cache-to` on
+  chained runs was the other option and is worse: the cache would then refresh only when
+  someone ran the workflow by hand, never on the daily path.
+
+  **`pages` deployed correctly and then failed its own freshness check.** The check read
+  the live `_index.json` eight seconds after `deploy-pages` returned and compared
+  `2026-11-06T00:10:06Z` against the bucket's `2026-11-06T13:32:47Z`. The deploy had
+  worked; the CDN had not propagated. The page served `13:32:47Z` when checked by hand
+  minutes later. `deploy-pages` returns when GitHub accepts the deployment, not when
+  every edge serves it, so a single read is a race the check loses whenever it wins it
+  slowly. It now polls twelve times at fifteen second intervals, cache busting each
+  attempt with a query string and `Cache-Control: no-cache` so a stale edge cannot be
+  mistaken for a stale deploy, and an unreadable read is retried rather than fatal
+  because an edge can refuse briefly while a deployment settles. Three minutes of
+  genuine disagreement still fails loudly, which is the behaviour that caught the site
+  being unreachable the first time it deployed.
+
+  The shared lesson is narrow and worth keeping: a workflow triggered one way is not
+  tested for another. Both bugs sat in configuration that had passed repeatedly under
+  `workflow_dispatch` and could not work under `workflow_run`.
 - **Datadog synthetic tests.** The student pack carries Datadog free for up to two years,
   US5 region only. Synthetic tests run from Datadog's own infrastructure against the
   public URL, so they need no agent, no memory on the container and no workflow, which

@@ -64,10 +64,37 @@ jobs:
       # each Parquet to request, so if a deploy silently served a stale artifact the
       # page would show old numbers with nothing to say so. This compares what is live
       # against what is in the bucket, and fails loudly when they differ.
+      #
+      # It polls rather than asking once. deploy-pages returns when GitHub accepts the
+      # deployment, not when every CDN edge serves it, so a single read moments later
+      # compares the new bucket against a cached old page and fails a deploy that
+      # actually worked. That is exactly what happened the first time the chain ran on
+      # its own: the check read eight seconds after the deploy and reported the
+      # previous publish, while the page was correct and current minutes later.
+      #
+      # Each attempt carries its own query string and asks for no cached copy, so a
+      # stale edge response cannot be mistaken for a stale deploy. A read that fails
+      # outright is retried rather than fatal, because the edge can refuse briefly
+      # while a deployment settles. Three minutes of disagreement is a real failure.
       - name: Check the published page is as fresh as the bucket
         run: |
-          live=$(curl -fsSL "${{ steps.deploy.outputs.page_url }}_index.json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["published_at"])')
           want=$(python3 -c 'import json; print(json.load(open("docs/site/_index.json"))["published_at"])')
-          echo "live: $live"
           echo "bucket: $want"
-          test "$live" = "$want"
+
+          live=
+          for attempt in $(seq 1 12); do
+            live=$(curl -fsSL \
+              -H 'Cache-Control: no-cache' \
+              "${{ steps.deploy.outputs.page_url }}_index.json?check=${{ github.run_id }}-$attempt" \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["published_at"])' 2>/dev/null) || live="unreadable"
+
+            echo "attempt $attempt: $live"
+            if [ "$live" = "$want" ]; then
+              echo "live and bucket agree after $attempt attempt(s)"
+              exit 0
+            fi
+            sleep 15
+          done
+
+          echo "live is still $live after $attempt attempts, wanted $want"
+          exit 1

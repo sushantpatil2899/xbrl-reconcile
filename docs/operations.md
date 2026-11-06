@@ -75,7 +75,9 @@ bills a flat rate per day whether or not anything is pulled: 60.96 US dollars a
 year for the Basic tier. GHCR is free for container storage and bandwidth. The
 build has to happen in Actions anyway, because the Dockerfile mounts the bucket
 credentials as a BuildKit secret so they touch exactly one layer and are
-recorded in none, which a platform builder generally cannot do.
+recorded in none, which a platform builder generally cannot do. GHCR also holds
+the build cache, under a `buildcache` tag, for the reason in the decisions
+below. The secret mount is recorded in no layer, so it reaches no cache either.
 
 **The deploy uses OIDC, so no Azure secret is stored anywhere.** The app
 registration carries a federated credential naming this repository and this
@@ -91,7 +93,19 @@ Contributor on one resource group and nothing else.
 `ingest` → `transform` → `image` → `deploy` is three levels, so `deploy` fires
 with zero headroom and anything chained after it would silently never run. This
 is a real constraint on what can be added later, and it is recorded in section
-17 of [design.md](design.md) along with the rest of the open items.
+17 of [design.md](design.md) along with the rest of the open items. The chain
+first ran on its own on 2026-11-06 and the trigger did reach `deploy`, so three
+levels work; a fourth would not.
+
+**A workflow triggered one way is not tested for another.** That first automatic
+run broke both leaves, each on configuration that had passed repeatedly under a
+manual dispatch and could not work under `workflow_run`. The build cache now
+lives in GHCR rather than the Actions cache, because GitHub grants only read
+access to the default branch cache scope for triggers it treats as low trust and
+`workflow_run` is one of them. The page's freshness check now polls for three
+minutes instead of reading once, because `deploy-pages` returns when GitHub
+accepts a deployment rather than when every CDN edge serves it. Section 17 of
+[design.md](design.md) has both in full.
 
 **The GHCR pull token expires.** It is a classic personal access token with
 `read:packages`, held as a Container Apps secret and therefore also present in
