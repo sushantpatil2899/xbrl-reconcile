@@ -147,7 +147,9 @@ Sixteen concepts, 58 tags. Revenue needs nine of them on its own:
 | `us-gaap:Revenues` | 12 | 427 |
 | `us-gaap:SalesRevenueNet` (retired 2018) | 5 | 145 |
 | `us-gaap:RevenueFromContractWithCustomerIncludingAssessedTax` | 1 | 52 |
-| four more, including two IFRS forms and two derived | | 211 |
+| five more, including two IFRS forms and two derived | | 210 |
+
+2,062 published revenue values in all.
 
 ```sql
 select source_tag, count(distinct cik) companies, count(*) n
