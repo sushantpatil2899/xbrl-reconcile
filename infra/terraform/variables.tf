@@ -29,3 +29,15 @@ variable "azure_location" {
   type        = string
   default     = "northcentralus"
 }
+
+variable "ghcr_read_token" {
+  description = "Classic GitHub token with read:packages only, so Container Apps can pull the private image"
+  type        = string
+  sensitive   = true
+}
+
+variable "api_image_tag" {
+  description = "Tag the app is first created with. Rollouts after that belong to the workflow, so changing this deploys nothing."
+  type        = string
+  default     = "latest"
+}

@@ -90,6 +90,28 @@ resource "azurerm_container_app" "api" {
   # failed last time from happening too early.
   depends_on = [time_sleep.environment_settled]
 
+  # The pull credential, and the one thing here that is genuinely a secret.
+  #
+  # A private registry needs a password, and GHCR only accepts a classic personal access
+  # token, so there is no managed identity to use instead the way Azure Container
+  # Registry would allow. The token therefore exists in HCP Terraform state, encrypted at
+  # rest but really there, and that cost disappears the day the package goes public and
+  # the pull becomes anonymous.
+  #
+  # Scope it to read:packages and nothing else. Its failure mode is narrow and quiet:
+  # when it expires, new revisions cannot pull while the running revision keeps serving,
+  # so it breaks at deploy time rather than at request time.
+  secret {
+    name  = "ghcr-token"
+    value = var.ghcr_read_token
+  }
+
+  registry {
+    server               = "ghcr.io"
+    username             = var.github_owner
+    password_secret_name = "ghcr-token"
+  }
+
   # Azure assigns this on its own and reports it back, so declaring it is simply saying
   # what is already true. Left out, every plan proposed setting it to null, which Azure
   # then ignored, and the same change was proposed again on the next run.
@@ -116,6 +138,17 @@ resource "azurerm_container_app" "api" {
       template[0].cooldown_period_in_seconds,
       template[0].polling_interval_in_seconds,
       ingress[0].traffic_weight,
+
+      # The running image belongs to the deploy workflow, not to this file. The marts
+      # are baked into the image and change daily, so a rollout happens far more often
+      # than anything else here, and a data refresh should never be able to alter a
+      # resource group. The workflow pushes a tag named after its run id, because a
+      # fixed tag does not change and so cannot produce a new revision, then rolls it
+      # out with az containerapp update.
+      #
+      # The sharp edge is deliberate: changing api_image_tag now deploys nothing, and
+      # the only way to change what is running is the workflow.
+      template[0].container[0].image,
     ]
   }
 
@@ -143,11 +176,28 @@ resource "azurerm_container_app" "api" {
     container {
       name = "api"
 
-      # Deliberately a placeholder, and deliberately Microsoft's own. This step proves
-      # the subscription, the region, the environment and the ingress all work before
-      # our own image exists to be blamed for a failure. It is replaced by the image
-      # built from this repository's Dockerfile once that is pushed to a registry.
-      image = "mcr.microsoft.com/k8se/quickstart:latest"
+      # Ours now. The placeholder it replaces was Microsoft's quickstart, which proved the
+      # subscription, region, environment and ingress worked before our own image existed
+      # to be blamed for a failure.
+      image = "ghcr.io/${var.github_owner}/${var.github_repository}:${var.api_image_tag}"
+
+      # Without this the rate limiter does not limit per caller.
+      #
+      # The limiter keys buckets on request.client.host, which uvicorn rewrites from
+      # X-Forwarded-For only for proxies listed in forwarded_allow_ips, defaulting to
+      # 127.0.0.1. Container Apps puts a managed ingress in front, so every request
+      # arrives from the ingress address and, left alone, the entire internet shares one
+      # bucket: sixty requests from anyone throttles everyone.
+      #
+      # "*" trusts the header from whoever sent it, which is only safe when nothing but
+      # the proxy can reach the port. Here that holds: the container port is reachable
+      # through the managed ingress and from other apps inside this environment, and this
+      # environment contains exactly one app. Adding a second app to it makes this worth
+      # revisiting.
+      env {
+        name  = "FORWARDED_ALLOW_IPS"
+        value = "*"
+      }
 
       # The smallest pair Container Apps accepts. The API answers from Parquet files
       # baked into the image, so it needs very little of either.
@@ -160,9 +210,8 @@ resource "azurerm_container_app" "api" {
     # Reachable from the internet, which is the point of hosting it.
     external_enabled = true
 
-    # Port 80 is what the quickstart image listens on. Our own image listens on 8000,
-    # so this changes in the same commit that changes the image.
-    target_port = 80
+    # What uvicorn listens on, set by PORT in the Dockerfile.
+    target_port = 8000
 
     # Azure normalises auto to http and reports http, so declaring http avoids a change
     # being proposed on every plan. The two behave identically for an HTTP/1.1 API.

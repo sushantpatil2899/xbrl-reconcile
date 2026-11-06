@@ -7,3 +7,8 @@ sec_contact_email = "you@example.com"
 # From the Azure portal, under Subscriptions. The region has a default of eastus2 and
 # only needs setting here to override it.
 azure_subscription_id = "00000000-0000-0000-0000-000000000000"
+
+# ghcr_read_token is deliberately absent. Terraform reads any TF_VAR_<name> variable
+# from the environment, so the pull token is exported rather than written to a file:
+#
+#   read -rs "?GHCR read:packages token: " TF_VAR_ghcr_read_token && export TF_VAR_ghcr_read_token
