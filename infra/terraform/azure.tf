@@ -90,6 +90,35 @@ resource "azurerm_container_app" "api" {
   # failed last time from happening too early.
   depends_on = [time_sleep.environment_settled]
 
+  # Azure assigns this on its own and reports it back, so declaring it is simply saying
+  # what is already true. Left out, every plan proposed setting it to null, which Azure
+  # then ignored, and the same change was proposed again on the next run.
+  workload_profile_name = "Consumption"
+
+  # Three fields Azure will not let us own, each confirmed by applying the change and
+  # reading the resource back unaltered.
+  #
+  # cooldown_period_in_seconds and polling_interval_in_seconds are platform managed.
+  # Azure stores nothing for them and reports zero, meaning use my defaults, while the
+  # provider defaults to 300 and 30 when they are omitted. Writing 0 here would stop
+  # the drift by stating something false, because 0 cooldown means scale down instantly
+  # and what we actually want is Azure's default.
+  #
+  # traffic_weight is required by the provider but is not read back from Azure, so it
+  # reads as missing on every refresh. It is inert under Single revision mode, where one
+  # revision takes everything. If this ever moves to Multiple revision mode and traffic
+  # is genuinely split, remove it from this list, or a real change will be hidden.
+  #
+  # Without these, every plan proposed a modification that altered nothing, which costs
+  # twenty seconds and teaches a reader that a clean plan is not achievable here.
+  lifecycle {
+    ignore_changes = [
+      template[0].cooldown_period_in_seconds,
+      template[0].polling_interval_in_seconds,
+      ingress[0].traffic_weight,
+    ]
+  }
+
   # Single means one revision serves all traffic, so a deploy replaces what is live
   # rather than running beside it. Multiple would let two revisions split traffic,
   # which is a feature worth having when there is something to compare and only a
@@ -134,6 +163,10 @@ resource "azurerm_container_app" "api" {
     # Port 80 is what the quickstart image listens on. Our own image listens on 8000,
     # so this changes in the same commit that changes the image.
     target_port = 80
+
+    # Azure normalises auto to http and reports http, so declaring http avoids a change
+    # being proposed on every plan. The two behave identically for an HTTP/1.1 API.
+    transport = "http"
 
     # Insecure connections are left disabled, the default, so plain HTTP is redirected
     # to HTTPS and the certificate Azure issues for the generated hostname is used.
