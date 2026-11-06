@@ -1,0 +1,430 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "How one filed tag becomes a number you can compare",
+    "output": ".archify/workflow-tag-to-verdict-20261105-232433/tag-to-verdict.html",
+    "quality_profile": "showcase",
+    "locale": "en",
+    "repository": {
+      "url": "https://github.com/sushantpatil2899/xbrl-reconcile.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "d05a4f5082b6d88966d2b846d07698c8c072ff12"
+    },
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "backend": {
+          "label": "pipeline step"
+        },
+        "security": {
+          "label": "decision point"
+        },
+        "messagebus": {
+          "label": "branch outcome"
+        },
+        "database": {
+          "label": "a table in the warehouse"
+        },
+        "external": {
+          "label": "as the company filed it"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "exceptions",
+      "label": "When the simple case does not hold",
+      "variant": "exception"
+    },
+    {
+      "id": "value",
+      "label": "Resolving the number"
+    },
+    {
+      "id": "evidence",
+      "label": "What the filer's own arithmetic says"
+    }
+  ],
+  "mainPath": [
+    "fact",
+    "lookup",
+    "rank",
+    "agree",
+    "resolve",
+    "publish"
+  ],
+  "nodes": [
+    {
+      "id": "fact",
+      "lane": "value",
+      "col": 0,
+      "type": "external",
+      "label": "One tagged fact",
+      "sublabel": "tag, period, value",
+      "sources": [
+        {
+          "path": "transform/models/staging/stg_sec_facts.sql",
+          "line": 1,
+          "end_line": 138
+        }
+      ],
+      "width": 148
+    },
+    {
+      "id": "lookup",
+      "lane": "value",
+      "col": 1,
+      "type": "security",
+      "label": "Mapped by config?",
+      "sublabel": "rule, or an override",
+      "sources": [
+        {
+          "path": "transform/models/intermediate/int_facts_mapped.sql",
+          "line": 98,
+          "end_line": 158,
+          "label": "candidates"
+        },
+        {
+          "path": "config/tag_mappings.yml",
+          "line": 1,
+          "label": "the rules"
+        }
+      ],
+      "width": 148
+    },
+    {
+      "id": "unmapped",
+      "lane": "exceptions",
+      "col": 1,
+      "type": "messagebus",
+      "label": "Nothing published",
+      "sublabel": "listed to map next",
+      "sources": [
+        {
+          "path": "transform/models/marts/mart_unmapped_tags.sql",
+          "line": 1,
+          "end_line": 88
+        }
+      ],
+      "width": 148
+    },
+    {
+      "id": "recover",
+      "lane": "exceptions",
+      "col": 2,
+      "type": "backend",
+      "label": "No total tagged",
+      "sublabel": "sum or recover it",
+      "sources": [
+        {
+          "path": "transform/models/intermediate/int_facts_mapped.sql",
+          "line": 224,
+          "end_line": 296,
+          "label": "sums and recovery"
+        }
+      ],
+      "width": 148
+    },
+    {
+      "id": "rank",
+      "lane": "value",
+      "col": 2,
+      "type": "backend",
+      "label": "Rank candidates",
+      "sublabel": "runner up kept",
+      "sources": [
+        {
+          "path": "transform/models/intermediate/int_facts_mapped.sql",
+          "line": 310,
+          "end_line": 333
+        }
+      ],
+      "width": 148
+    },
+    {
+      "id": "demote",
+      "lane": "exceptions",
+      "col": 3,
+      "type": "messagebus",
+      "label": "Drop one level",
+      "sublabel": "high to medium",
+      "sources": [
+        {
+          "path": "transform/models/intermediate/int_facts_mapped.sql",
+          "line": 355,
+          "end_line": 373
+        }
+      ],
+      "width": 148
+    },
+    {
+      "id": "agree",
+      "lane": "value",
+      "col": 3,
+      "type": "security",
+      "label": "Top two agree?",
+      "sublabel": "within 0.1 percent",
+      "sources": [
+        {
+          "path": "transform/models/intermediate/int_facts_mapped.sql",
+          "line": 355,
+          "end_line": 361,
+          "label": "the comparison"
+        }
+      ],
+      "width": 148
+    },
+    {
+      "id": "linkbase",
+      "lane": "evidence",
+      "col": 3,
+      "type": "database",
+      "label": "Calculation arcs",
+      "sublabel": "annual reports only",
+      "sources": [
+        {
+          "path": "transform/models/intermediate/int_calculation_arcs.sql",
+          "line": 1,
+          "end_line": 79
+        }
+      ],
+      "width": 148
+    },
+    {
+      "id": "derive",
+      "lane": "exceptions",
+      "col": 4,
+      "type": "backend",
+      "label": "Still nothing",
+      "sublabel": "from an identity",
+      "sources": [
+        {
+          "path": "transform/models/intermediate/int_facts_derived.sql",
+          "line": 1,
+          "end_line": 195
+        }
+      ],
+      "width": 148
+    },
+    {
+      "id": "resolve",
+      "lane": "value",
+      "col": 4,
+      "type": "backend",
+      "label": "Reconcile filings",
+      "sublabel": "US GAAP, then latest",
+      "sources": [
+        {
+          "path": "transform/models/intermediate/int_facts_resolved.sql",
+          "line": 31,
+          "end_line": 90
+        }
+      ],
+      "width": 148
+    },
+    {
+      "id": "is_part",
+      "lane": "evidence",
+      "col": 4,
+      "type": "security",
+      "label": "Called a part?",
+      "sublabel": "do the figures differ?",
+      "sources": [
+        {
+          "path": "transform/models/intermediate/int_arc_separation.sql",
+          "line": 1,
+          "end_line": 179,
+          "label": "measured per period"
+        }
+      ],
+      "width": 148
+    },
+    {
+      "id": "publish",
+      "lane": "value",
+      "col": 5,
+      "type": "database",
+      "label": "Published row",
+      "sublabel": "value and both labels",
+      "sources": [
+        {
+          "path": "transform/models/marts/mart_financials.sql",
+          "line": 177,
+          "end_line": 218
+        }
+      ],
+      "width": 148
+    },
+    {
+      "id": "verdict",
+      "lane": "evidence",
+      "col": 5,
+      "type": "backend",
+      "label": "Evidence verdict",
+      "sublabel": "one of four",
+      "sources": [
+        {
+          "path": "transform/models/marts/mart_financials.sql",
+          "line": 207,
+          "end_line": 218,
+          "label": "the four outcomes"
+        },
+        {
+          "path": "config/vocabularies.yml",
+          "line": 113,
+          "end_line": 137,
+          "label": "what each means"
+        }
+      ],
+      "width": 148
+    }
+  ],
+  "edges": [
+    {
+      "id": "fact-lookup",
+      "from": "fact",
+      "to": "lookup"
+    },
+    {
+      "id": "no-rule",
+      "from": "lookup",
+      "to": "unmapped",
+      "label": "no rule here",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "mapped",
+      "from": "lookup",
+      "to": "rank",
+      "label": "candidates",
+      "variant": "emphasis"
+    },
+    {
+      "id": "no-total",
+      "from": "lookup",
+      "to": "recover",
+      "label": "no tag at all",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "sum-candidate",
+      "from": "recover",
+      "to": "rank",
+      "label": "a candidate",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "rank-agree",
+      "from": "rank",
+      "to": "agree"
+    },
+    {
+      "id": "disagree",
+      "from": "agree",
+      "to": "demote",
+      "label": "they differ",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "agreed",
+      "from": "agree",
+      "to": "resolve",
+      "label": "kept",
+      "variant": "emphasis"
+    },
+    {
+      "id": "demoted",
+      "from": "demote",
+      "to": "resolve",
+      "label": "one lower",
+      "variant": "dashed",
+      "role": "branch",
+      "toSide": "top"
+    },
+    {
+      "id": "nothing-left",
+      "from": "resolve",
+      "to": "derive",
+      "label": "nothing found",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "derived-row",
+      "from": "derive",
+      "to": "publish",
+      "label": "derived",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "resolve-publish",
+      "from": "resolve",
+      "to": "publish",
+      "variant": "emphasis"
+    },
+    {
+      "id": "chosen-filing",
+      "from": "resolve",
+      "to": "is_part",
+      "label": "chosen filing",
+      "variant": "default"
+    },
+    {
+      "id": "arcs-read",
+      "from": "linkbase",
+      "to": "is_part",
+      "label": "declared sums"
+    },
+    {
+      "id": "verdict-out",
+      "from": "is_part",
+      "to": "verdict"
+    },
+    {
+      "id": "verdict-attached",
+      "from": "verdict",
+      "to": "publish",
+      "label": "attached",
+      "variant": "emphasis",
+      "role": "return"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Why confidence is not a guess",
+      "items": [
+        "high: a standard tag for this concept, reported by the company itself",
+        "medium: a retired tag, another rulebook's tag, or a total we had to reassemble",
+        "low: a judgement call made for one company, flagged so it never reads as a sector rule",
+        "derived: computed from other concepts, so the arithmetic is exact and the inputs carry their own confidence"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "What the evidence verdict means",
+      "items": [
+        "confirmed: that filing's own arithmetic does not contradict the mapping",
+        "equivalent: the filer calls the tag a part of our total, and its figures make the part equal that total",
+        "contradicted: the filer calls it a part and its own figures make the part smaller. A mapping worth reading twice",
+        "unexamined: that filing carries no calculation linkbase, which is true of most quarterly reports"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Two traps this shape avoids",
+      "items": [
+        "Being declared a part is not a contradiction on its own: where a company has no noncontrolling interest the part and the total carry the same number, so the figures are compared per period, not the shape of the arc",
+        "US GAAP is preferred over IFRS deliberately rather than by filing date: one company files both for the same year, and the later filing is not always the right one"
+      ]
+    }
+  ]
+}

@@ -29,3 +29,15 @@ transform/.user.yml
 # The published marts are fetched at deploy time, not committed.
 docs/site/*.parquet
 docs/site/_index.json
+
+# Archify working artifacts. The candidates and exported images are committed;
+# the receipts, screenshots and rendered HTML are rebuilt from them.
+.archify/*/visual-*/
+.archify/*/review-*/
+.archify/*/*.html
+.archify/*/*.finalize*.json
+.archify/*/*.deliver*.json
+.archify/*/*.browser-check.json
+
+# Brag output
+brag-output/
