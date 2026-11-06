@@ -2314,6 +2314,32 @@ Left open by hosting, in rough order of value:
   genuine disagreement still fails loudly, which is the behaviour that caught the site
   being unreachable the first time it deployed.
 
+  Verifying that fix found a third thing, in GitHub's own `deploy-pages` rather than in
+  anything here. **A Pages deployment is keyed by commit, so a commit whose deployment
+  was cancelled cannot be deployed again.** Four runs, same content and same workflow:
+
+  | Run | Commit | `deploy-pages` |
+  |---|---|---|
+  | 13:33, chained | `f37c0b7` | success in 8 seconds |
+  | 15:46, dispatched | `c117ea5` | stalled in `updating_pages`, timed out at 10 minutes |
+  | 16:05, dispatched | `c117ea5` again | status came back empty, timed out the same way |
+  | 16:30, dispatched | `e9c2a7a` | success |
+
+  The log names what it gives up on: "Canceled deployment with ID c117ea51e86e...",
+  which is the commit SHA. The second and third runs were therefore competing for one
+  deployment id, the third trying to recreate what the second had just cancelled. Why
+  the second stalled is not established and was not reported on GitHub's status page;
+  that it could not then be retried on the same commit is. The practical rule is that
+  a stalled Pages deploy is retried by pushing a commit, not by dispatching again.
+
+  Two things that look alarming here are not. `deploy-pages` times out at ten minutes
+  and the job allows fifteen, so the action cancels the stuck deployment itself rather
+  than leaving it half applied, and the previously published build keeps serving
+  throughout: the site answered 200 on every page and served the correct
+  `published_at` during both failures. And the Pages API reports `status: null` for
+  this site whether or not a deploy just succeeded, because it is built by workflow
+  rather than by the legacy builder, so that field says nothing about health.
+
   The shared lesson is narrow and worth keeping: a workflow triggered one way is not
   tested for another. Both bugs sat in configuration that had passed repeatedly under
   `workflow_dispatch` and could not work under `workflow_run`.

@@ -107,6 +107,16 @@ minutes instead of reading once, because `deploy-pages` returns when GitHub
 accepts a deployment rather than when every CDN edge serves it. Section 17 of
 [design.md](design.md) has both in full.
 
+**A stalled Pages deploy is retried with a commit, not a re-run.** A Pages
+deployment is keyed by the commit, and `deploy-pages` names that commit as the
+deployment id when it gives up. Dispatching `pages` again on the same commit
+therefore tries to recreate a deployment that was just cancelled, and times out
+the same way; a new commit deploys immediately. The site keeps serving its last
+published build throughout, so a failed deploy is a staleness problem rather
+than an outage. Note also that the Pages API reports `status: null` for this
+site whether or not a deploy just succeeded, because it is built by workflow
+rather than the legacy builder, so that field says nothing about health.
+
 **The GHCR pull token expires.** It is a classic personal access token with
 `read:packages`, held as a Container Apps secret and therefore also present in
 the Terraform state. Making the package public would remove the token, the
