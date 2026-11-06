@@ -41,6 +41,22 @@ resource "azurerm_container_app_environment" "api" {
   location            = azurerm_resource_group.api.location
   resource_group_name = azurerm_resource_group.api.name
 
+  # Declared because Azure creates it whether we ask or not, and leaving it out of the
+  # configuration is not a neutral omission. The provider documentation is explicit:
+  # an environment created with profiles must always keep at least one, and removing
+  # them all forces the resource to be recreated. So an absent block here reads as a
+  # request to strip every profile, which made every plan propose a modification to the
+  # environment, and the read that follows that modification is what kept returning a
+  # spurious 404 and aborting the apply.
+  #
+  # maximum_count and minimum_count are left out deliberately. They are optional, and
+  # instance counts mean nothing for a Consumption profile, where Azure allocates per
+  # request rather than per instance.
+  workload_profile {
+    name                  = "Consumption"
+    workload_profile_type = "Consumption"
+  }
+
   tags = local.azure_tags
 }
 
@@ -86,6 +102,14 @@ resource "azurerm_container_app" "api" {
     # front of the app is the real defence against a flood.
     min_replicas = 0
     max_replicas = 2
+
+    # Also declared because Azure creates it by default. Ten concurrent requests to a
+    # replica before another is started, which for an API answering from local Parquet
+    # is generous, and leaving it undeclared meant every plan proposed deleting it.
+    http_scale_rule {
+      name                = "http-scaler"
+      concurrent_requests = 10
+    }
 
     container {
       name = "api"
