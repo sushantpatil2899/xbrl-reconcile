@@ -44,10 +44,35 @@ resource "azurerm_container_app_environment" "api" {
   tags = local.azure_tags
 }
 
+# A pause between creating the environment and asking Azure to read it back.
+#
+# Azure's management API is eventually consistent, and the first apply of this file
+# proved how expensive that is. The environment was created successfully, the container
+# app's immediate read of it returned 404, the apply aborted, and because the provider
+# never got its confirming read the environment was never written to state. Azure had
+# the resource, Terraform did not, and the next apply failed with "already exists".
+# Recovering it took a terraform import.
+#
+# Thirty seconds is a wide margin on a lag measured in seconds, and it is paid only
+# when the environment is actually created. The trigger is the environment's id, so a
+# replaced environment forces a fresh pause, while an ordinary apply that changes only
+# the app waits for nothing.
+resource "time_sleep" "environment_settled" {
+  create_duration = "30s"
+
+  triggers = {
+    environment_id = azurerm_container_app_environment.api.id
+  }
+}
+
 resource "azurerm_container_app" "api" {
   name                         = "ca-${var.github_repository}-api"
   container_app_environment_id = azurerm_container_app_environment.api.id
   resource_group_name          = azurerm_resource_group.api.name
+
+  # Not the environment directly. Depending on the pause is what keeps the read that
+  # failed last time from happening too early.
+  depends_on = [time_sleep.environment_settled]
 
   # Single means one revision serves all traffic, so a deploy replaces what is live
   # rather than running beside it. Multiple would let two revisions split traffic,
