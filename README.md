@@ -13,9 +13,9 @@ single number.
 > 16 canonical concepts. 51 different XBRL tags used to report them. Revenue
 > alone is filed under seven.
 
-[![XBRL Reconcile walkthrough, 3 minutes](docs/media/walkthrough-poster.jpg)](docs/media/walkthrough.mp4)
+[![XBRL Reconcile walkthrough, 3 minutes](docs/media/walkthrough-poster.jpg)](https://youtu.be/3Grhe_Sc8xg)
 
-**[Watch the 3 minute walkthrough](docs/media/walkthrough.mp4)**: the problem, a live demo of the query page, and the engineering behind it.
+**[Watch the 3 minute walkthrough](https://youtu.be/3Grhe_Sc8xg)**: the problem, a live demo of the query page, and the engineering behind it.
 
 ---
 
