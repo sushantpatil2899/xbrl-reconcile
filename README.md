@@ -10,10 +10,12 @@ single number.
 · **[API](https://ca-xbrl-reconcile-api.wonderfulwater-66905cf2.northcentralus.azurecontainerapps.io/docs)**
 · **[Architecture](https://sushantpatil2899.github.io/xbrl-reconcile/architecture.html)**
 
-> 16 canonical concepts. 58 different XBRL tags used to report them. Revenue
-> alone is filed under nine.
+> 16 canonical concepts. 51 different XBRL tags used to report them. Revenue
+> alone is filed under seven.
 
-<!-- Two minute walkthrough goes here, directly under the hero. -->
+[![XBRL Reconcile walkthrough, 3 minutes](docs/media/walkthrough-poster.jpg)](docs/media/walkthrough.mp4)
+
+**[Watch the 3 minute walkthrough](docs/media/walkthrough.mp4)**: the problem, a live demo of the query page, and the engineering behind it.
 
 ---
 
@@ -56,7 +58,7 @@ Systems* 33(3), 2019, [doi:10.2308/isys-52162](https://doi.org/10.2308/isys-5216
 tags, carrying 22,342 facts. **904 of their 1,103 usages, 82%, belong to exactly
 one company.** None of them maps to a canonical concept. A further 2,216
 standard tags carrying 355,484 facts are unmapped. And for the 16 concepts that
-are mapped, 58 different tags were needed.
+are mapped, 51 different filed tags were needed.
 
 A query for "revenue" that assumes one tag silently returns nothing for
 CrowdStrike, which uses the `IncludingAssessedTax` variant, and silently
@@ -139,7 +141,7 @@ every one comes with a way to check it yourself.
 
 ### The problem is real, and this is its size
 
-Sixteen concepts, 58 tags. Revenue needs nine of them on its own:
+Sixteen concepts, 51 filed tags. Revenue needs seven of them on its own:
 
 | Tag used for `revenue` | Companies | Values |
 |---|---:|---:|
@@ -147,9 +149,12 @@ Sixteen concepts, 58 tags. Revenue needs nine of them on its own:
 | `us-gaap:Revenues` | 12 | 427 |
 | `us-gaap:SalesRevenueNet` (retired 2018) | 5 | 145 |
 | `us-gaap:RevenueFromContractWithCustomerIncludingAssessedTax` | 1 | 52 |
-| five more, including two IFRS forms and two derived | | 210 |
+| three more, including both IFRS forms | | 11 |
+| two `derived:` bases, computed here rather than filed | 28 | 199 |
 
-2,062 published revenue values in all.
+2,062 published revenue values in all. The seven filed tags are what the
+companies did; the two derived bases are what this pipeline had to do about it,
+which is why the counts above separate them.
 
 ```sql
 select source_tag, count(distinct cik) companies, count(*) n

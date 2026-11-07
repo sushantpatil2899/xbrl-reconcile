@@ -8,8 +8,13 @@ Turns a raw XBRL tag into a canonical concept and attaches a confidence level
 to the result. This is the part of the project the rest exists to serve.
 
 The measured shape of the problem, across the 28 companies here: **16 canonical
-concepts are reported under 58 distinct source tags.** Revenue alone accounts
-for nine of them.
+concepts are reported under 51 distinct filed tags.** Revenue alone accounts for
+seven of them.
+
+Two further rows appear for revenue below, and seven across all concepts, with a
+`derived:` prefix. Those are bases this pipeline computes when no total was
+tagged, so they are not part of the problem the filers created. The headline
+counts leave them out and the table names them separately.
 
 | Tag used for `revenue` | Companies | Values | Confidence |
 |---|---:|---:|---|
